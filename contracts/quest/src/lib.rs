@@ -88,6 +88,21 @@ pub enum Error {
     Paused = common::ERR_PAUSED as u32,
 }
 
+/// Metadata about a public category, including when its on-chain listing will
+/// expire. Frontends use `expires_at` to warn users before a category (and the
+/// quests listed under it) silently disappears due to TTL expiry.
+#[contracttype]
+#[derive(Clone, Debug, PartialEq)]
+pub struct CategoryInfo {
+    pub category: String,
+    pub quest_count: u32,
+    /// Remaining persistent-TTL entries (ledgers) before the category listing expires.
+    pub ttl_remaining: u32,
+    /// Approximate absolute expiry timestamp (ledger seconds). Derived from
+    /// `ttl_remaining` using the ~5s/ledger assumption documented in ADR-005.
+    pub expires_at: u64,
+}
+
 // TTL constants and address validation moved to common.
 const MAX_TAGS: u32 = 5;
 const MAX_TAG_LEN: u32 = 32;
@@ -1279,6 +1294,48 @@ impl QuestContract {
             common::extend_persistent_ttl(&env, &category_key);
         }
         matches
+    }
+
+    /// Get metadata for a public category, including its TTL/expiry information.
+    ///
+    /// The category listing is stored as persistent data with a bounded TTL.
+    /// When that TTL elapses the listing (and the quests surfaced through it)
+    /// can vanish without warning. This query exposes `expires_at` (an absolute
+    /// ledger timestamp) and `ttl_remaining` (ledgers left) so the frontend can
+    /// show users that a category is about to disappear and suggest mitigation
+    /// (e.g. re-pinning or re-listing the quests).
+    pub fn get_category(env: Env, category: String) -> Result<CategoryInfo, Error> {
+        let key = DataKey::PublicCategoryQuests(category.clone());
+        let ids: Vec<u32> = env
+            .storage()
+            .persistent()
+            .get(&key)
+            .unwrap_or(Vec::new(&env));
+
+        if ids.is_empty() {
+            return Err(Error::NotFound);
+        }
+
+        // Soroban only exposes the remaining ledger count for a persistent
+        // entry, so approximate the absolute expiry. At ~5s/ledger (ADR-005)
+        // this is accurate to within the network's drift tolerance.
+        let ttl_remaining = env.storage().persistent().get_ttl(&key);
+        let approx_seconds_per_ledger: u64 = 5;
+        let now = env.ledger().timestamp();
+        let expires_at = now.saturating_add(
+            (ttl_remaining as u64).saturating_mul(approx_seconds_per_ledger),
+        );
+
+        // Refresh the listing's TTL on read so a popular category does not
+        // expire merely from being queried.
+        env.storage().persistent().extend_ttl(&key, THRESHOLD, BUMP);
+
+        Ok(CategoryInfo {
+            category,
+            quest_count: ids.len(),
+            ttl_remaining,
+            expires_at,
+        })
     }
 
     /// Get all quests owned by an address.

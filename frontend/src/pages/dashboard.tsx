@@ -1,4 +1,4 @@
-import React, { useState, Suspense } from "react"
+import React, { useState, useEffect, useCallback, Suspense } from "react"
 import {
   Plus,
   Users,
@@ -28,6 +28,7 @@ import { useWallet } from "@/hooks/use-wallet"
 import { questClient } from "@/lib/contracts/quest"
 import { milestoneClient } from "@/lib/contracts/milestone"
 import { rewardsClient } from "@/lib/contracts/rewards"
+import type { QuestInfo, CategoryInfo } from "@/lib/contract-types"
 import { useQuestStatsMap } from "@/hooks/use-quest-stats"
 import { formatTokens } from "@/lib/utils"
 import { navigateToPath } from "@/lib/navigation"
@@ -40,8 +41,8 @@ import { RecentActivity } from "./dashboard/recent-activity"
 
 // Lazy-loaded chart
 const EarningsChart = React.lazy(() => import("./dashboard/earnings-chart"))
-const DASHBOARD_QUEST_PAGE_SIZE = 12
-const DASHBOARD_LOAD_MORE_SIZE = 12
+const DASHBOARD_QUEST_PAGE_SIZE = 20
+const DASHBOARD_LOAD_MORE_SIZE = 20
 const TRENDING_QUEST_LIMIT = 2
 const RECENT_ACTIVITY_LIMIT = 5
 
@@ -55,7 +56,7 @@ interface DashboardProps {
 }
 
 export function Dashboard({ onSelectQuest, onCreateQuest, onLaunchTutorial }: DashboardProps = {} as DashboardProps) {
-  const { connected, connect, shortAddress, address, loading: walletConnecting } = useWallet()
+  const { connected, connect, shortAddress, address, loading: walletConnecting, error } = useWallet()
   const [filter, setFilter] = useState<"all" | "owned" | "enrolled">("all")
   const [preset, setPreset] = useState<
     "none" | "ending-soon" | "recently-funded" | "recently-verified"
@@ -70,6 +71,37 @@ export function Dashboard({ onSelectQuest, onCreateQuest, onLaunchTutorial }: Da
   const [rewardMax, setRewardMax] = useState<string>("")
   const [displayCount, setDisplayCount] = useState(DASHBOARD_QUEST_PAGE_SIZE)
   const [nowSeconds] = useState(() => Math.floor(Date.now() / 1000))
+
+  // Incremental, contract-side pagination of the public quest feed so the
+  // dashboard never renders all (potentially hundreds of) quests at once.
+  // Only `DASHBOARD_QUEST_PAGE_SIZE` public quests are loaded initially; further
+  // pages are fetched ("load 20 at a time") as the user requests more.
+  const [extraPublicQuests, setExtraPublicQuests] = useState<QuestInfo[]>([])
+  const [hasMorePublic, setHasMorePublic] = useState(false)
+  const [loadingMore, setLoadingMore] = useState(false)
+
+  // Surface category-listing expiry so users are warned before a category (and
+  // its quests) disappears from discovery — issue #1348.
+  const [categoryInfo, setCategoryInfo] = useState<CategoryInfo | null>(null)
+
+  useEffect(() => {
+    if (category === "all" || !questClient.getCategory) {
+      setCategoryInfo(null)
+      return
+    }
+    let active = true
+    questClient
+      .getCategory(category)
+      .then(info => {
+        if (active) setCategoryInfo(info)
+      })
+      .catch(() => {
+        if (active) setCategoryInfo(null)
+      })
+    return () => {
+      active = false
+    }
+  }, [category])
   
   const onboarding = useOnboarding()
 
@@ -175,6 +207,33 @@ export function Dashboard({ onSelectQuest, onCreateQuest, onLaunchTutorial }: Da
   const { statsByQuestId: questStats, isLoading: questStatsLoading } =
     useQuestStatsMap(previewQuestIds)
 
+  // When the first page of public quests arrives at full size, there are likely
+  // more pages available on the contract to be loaded on demand.
+  useEffect(() => {
+    if (publicQuests.length === DASHBOARD_QUEST_PAGE_SIZE) {
+      setHasMorePublic(true)
+    }
+  }, [publicQuests])
+
+  // Fetch the next page of public quests from the contract and append it.
+  const loadMorePublic = useCallback(async () => {
+    const loaded = publicQuests.length + extraPublicQuests.length
+    setLoadingMore(true)
+    try {
+      const next = await questClient.listPublicQuests(loaded, DASHBOARD_LOAD_MORE_SIZE)
+      if (!Array.isArray(next) || next.length === 0) {
+        setHasMorePublic(false)
+        return
+      }
+      setExtraPublicQuests(prev => [...prev, ...next])
+      setHasMorePublic(next.length === DASHBOARD_LOAD_MORE_SIZE)
+    } catch {
+      setHasMorePublic(false)
+    } finally {
+      setLoadingMore(false)
+    }
+  }, [publicQuests, extraPublicQuests])
+
   const goToQuest = (id: number) => {
     if (onSelectQuest) {
       onSelectQuest(id)
@@ -191,8 +250,14 @@ export function Dashboard({ onSelectQuest, onCreateQuest, onLaunchTutorial }: Da
     navigateToPath("/create-quest")
   }
 
+  const loadedPublicQuests = [...publicQuests, ...extraPublicQuests]
+
   const filteredQuests =
-    filter === "owned" ? ownedQuests : filter === "enrolled" ? enrolledQuests : publicQuests
+    filter === "owned"
+      ? ownedQuests
+      : filter === "enrolled"
+        ? enrolledQuests
+        : loadedPublicQuests
 
   const presetFilteredQuests = (() => {
     if (preset === "ending-soon") {
@@ -379,6 +444,15 @@ export function Dashboard({ onSelectQuest, onCreateQuest, onLaunchTutorial }: Da
                   </>
                 )}
               </Button>
+
+              {error && (
+                <div
+                  role="alert"
+                  className="border-border bg-destructive/10 mb-6 border px-4 py-3 text-left text-sm font-semibold text-destructive"
+                >
+                  {error.message}
+                </div>
+              )}
 
               {/* Mini feature list */}
               <div className="border-border animate-fade-in-up stagger-4 mt-8 border-t pt-6">
@@ -576,6 +650,21 @@ export function Dashboard({ onSelectQuest, onCreateQuest, onLaunchTutorial }: Da
                   <option value="highest-reward">Highest reward</option>
                 </select>
               </div>
+
+              {categoryInfo && (
+                <p
+                  className={`text-xs font-bold ${
+                    categoryInfo.expiresAt * 1000 - Date.now() < 7 * 24 * 60 * 60 * 1000
+                      ? "text-destructive"
+                      : "text-muted-foreground"
+                  }`}
+                >
+                  {categoryInfo.expiresAt * 1000 - Date.now() < 7 * 24 * 60 * 60 * 1000
+                    ? "Expiring soon — "
+                    : "Available until "}
+                  {new Date(categoryInfo.expiresAt * 1000).toLocaleDateString()}
+                </p>
+              )}
 
               {/* Status filter chips */}
               <div className="mb-4 flex flex-wrap gap-2" role="group" aria-label="Status filter">
@@ -786,17 +875,30 @@ export function Dashboard({ onSelectQuest, onCreateQuest, onLaunchTutorial }: Da
                 })}
               </div>
 
-              {sortedQuests.length > visibleQuests.length && !isLoading && !loadError && (
-                <div className="mt-5 text-center">
-                  <Button
-                    variant="outline"
-                    onClick={() => setDisplayCount(prev => prev + DASHBOARD_LOAD_MORE_SIZE)}
-                    className="shimmer-on-hover"
-                  >
-                    Load more ({visibleQuests.length} of {sortedQuests.length})
-                  </Button>
-                </div>
-              )}
+              {(hasMorePublic || sortedQuests.length > visibleQuests.length) &&
+                !isLoading &&
+                !loadError && (
+                  <div className="mt-5 text-center">
+                    <Button
+                      variant="outline"
+                      onClick={() => {
+                        setDisplayCount(prev => prev + DASHBOARD_LOAD_MORE_SIZE)
+                        if (hasMorePublic) void loadMorePublic()
+                      }}
+                      className="shimmer-on-hover"
+                      disabled={loadingMore}
+                    >
+                      {loadingMore ? (
+                        <>
+                          <Loader2 className="h-4 w-4 animate-spin" />
+                          Loading…
+                        </>
+                      ) : (
+                        `Load more (${visibleQuests.length} of ${sortedQuests.length})`
+                      )}
+                    </Button>
+                  </div>
+                )}
 
               {sortedQuests.length === 0 && !isLoading && !loadError && (
                 <div className="mt-5">

@@ -59,6 +59,18 @@ export interface QuestInfo {
   verified: boolean // bool
 }
 
+/**
+ * Metadata returned by the `get_category` contract query (issue #1348).
+ * `expiresAt` is an absolute ledger timestamp (seconds) at which the category
+ * listing's TTL expires and the category can vanish from discovery.
+ */
+export interface CategoryInfo {
+  category: string // String
+  questCount: number // u32
+  ttlRemaining: number // u32 (ledgers left)
+  expiresAt: number // u64 (absolute expiry timestamp)
+}
+
 // ─── Rewards Contract Types ──────────────────────────────────────────────────
 
 /**
