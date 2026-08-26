@@ -24,6 +24,11 @@ pub enum DataKey {
     Enrollees(u32),
     PublicQuests,
     PublicCategoryQuests(String),
+    /// Absolute ledger (sequence number) at which a public category's listing
+    /// expires. Recorded whenever the category listing is (re)touched so the
+    /// `get_category` query can surface an accurate `expires_at` without a
+    /// runtime TTL read (unavailable in soroban-sdk 22).
+    CategoryExpiry(String),
     OwnerQuests(Address),
     EnrolleeQuests(Address),
     Admin,
@@ -1289,9 +1294,10 @@ impl QuestContract {
             }
         }
 
-        let category_key = DataKey::PublicCategoryQuests(category);
+        let category_key = DataKey::PublicCategoryQuests(category.clone());
         if env.storage().persistent().has(&category_key) {
             common::extend_persistent_ttl(&env, &category_key);
+            Self::record_category_expiry(&env, &category);
         }
         matches
     }
@@ -1316,19 +1322,27 @@ impl QuestContract {
             return Err(Error::NotFound);
         }
 
-        // Soroban only exposes the remaining ledger count for a persistent
-        // entry, so approximate the absolute expiry. At ~5s/ledger (ADR-005)
-        // this is accurate to within the network's drift tolerance.
-        let ttl_remaining = env.storage().persistent().get_ttl(&key);
+        // The listing's expiry ledger is recorded whenever the category is
+        // (re)touched (see add/remove_id_to_index and
+        // get_public_quests_by_category). Fall back to "now + BUMP" for
+        // categories that were written before this field existed.
+        let expiry_ledger: u32 = env
+            .storage()
+            .persistent()
+            .get(&DataKey::CategoryExpiry(category.clone()))
+            .unwrap_or(env.ledger().sequence().saturating_add(common::BUMP));
+
+        let current_ledger = env.ledger().sequence();
+        let ttl_remaining = expiry_ledger.saturating_sub(current_ledger);
+
+        // Approximate the absolute expiry as a Unix timestamp. Soroban ledgers
+        // close roughly every ~5s (ADR-005); convert the remaining ledgers to
+        // seconds and add to the current ledger close time.
         let approx_seconds_per_ledger: u64 = 5;
-        let now = env.ledger().timestamp();
-        let expires_at = now.saturating_add(
+        let current_ts = env.ledger().timestamp();
+        let expires_at = current_ts.saturating_add(
             (ttl_remaining as u64).saturating_mul(approx_seconds_per_ledger),
         );
-
-        // Refresh the listing's TTL on read so a popular category does not
-        // expire merely from being queried.
-        env.storage().persistent().extend_ttl(&key, THRESHOLD, BUMP);
 
         Ok(CategoryInfo {
             category,
@@ -1566,6 +1580,9 @@ impl QuestContract {
             env.storage().persistent().set(&key, &ids);
         }
         common::extend_persistent_ttl(env, &key);
+        if let DataKey::PublicCategoryQuests(c) = &key {
+            Self::record_category_expiry(env, c);
+        }
     }
 
     fn remove_id_from_index(env: &Env, key: DataKey, id: u32) {
@@ -1586,6 +1603,20 @@ impl QuestContract {
 
         env.storage().persistent().set(&key, &updated);
         common::extend_persistent_ttl(env, &key);
+        if let DataKey::PublicCategoryQuests(c) = &key {
+            Self::record_category_expiry(env, c);
+        }
+    }
+
+    /// Record the absolute ledger at which a public category's listing expires.
+    /// Mirrors the TTL bump performed by `extend_persistent_ttl` so that
+    /// `get_category` can surface an accurate `expires_at` (soroban-sdk 22 has
+    /// no runtime TTL read outside of testutils).
+    fn record_category_expiry(env: &Env, category: &String) {
+        let expiry = env.ledger().sequence().saturating_add(common::BUMP);
+        env.storage()
+            .persistent()
+            .set(&DataKey::CategoryExpiry(category.clone()), &expiry);
     }
 
     fn validate_tags(tags: &Vec<String>) -> Result<(), Error> {

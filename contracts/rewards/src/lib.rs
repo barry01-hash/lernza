@@ -1221,11 +1221,7 @@ impl RewardsContract {
     /// Add a token to the supported-token whitelist. Admin only.
     /// Adding the first token enables enforcement for all subsequent
     /// `fund_quest_with_token` / `distribute_reward_with_token` calls.
-    pub fn add_supported_token(
-        env: Env,
-        admin: Address,
-        token: Address,
-    ) -> Result<(), Error> {
+    pub fn add_supported_token(env: Env, admin: Address, token: Address) -> Result<(), Error> {
         admin.require_auth();
         let stored = Self::get_admin(env.clone())?;
         if stored != admin {
@@ -1249,11 +1245,7 @@ impl RewardsContract {
 
     /// Remove a token from the supported-token whitelist. Admin only.
     /// When the last token is removed, enforcement is disabled (fail-open again).
-    pub fn remove_supported_token(
-        env: Env,
-        admin: Address,
-        token: Address,
-    ) -> Result<(), Error> {
+    pub fn remove_supported_token(env: Env, admin: Address, token: Address) -> Result<(), Error> {
         admin.require_auth();
         let stored = Self::get_admin(env.clone())?;
         if stored != admin {
