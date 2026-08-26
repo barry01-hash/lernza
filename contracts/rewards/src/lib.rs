@@ -64,6 +64,14 @@ pub enum DataKey {
     Admin,
     // Pause state for admin operations
     Paused,
+    // Configurable whitelist of supported reward token addresses — Issue #1349.
+    // When enabled, `fund_quest_with_token` / `distribute_reward_with_token`
+    // reject any token not present in this list.
+    SupportedTokens,
+    // Whether the supported-token whitelist is currently enforced. Starts false
+    // (fail-open) so existing single/multi-token flows keep working until an
+    // admin explicitly configures the platform's supported tokens.
+    SupportedTokensEnabled,
 }
 
 #[contracterror]
@@ -365,6 +373,13 @@ impl RewardsContract {
             return Err(Error::InvalidToken);
         }
 
+        // Reject tokens that are not on the platform's supported-token whitelist.
+        // Prevents a milestone from promising — and the platform from holding or
+        // distributing — a token the platform has not deployed/approved.
+        if !Self::is_token_supported(&env, &token_addr) {
+            return Err(Error::InvalidToken);
+        }
+
         // Set authority if not already set
         let auth_key = DataKey::QuestAuthority(quest_id);
         if let Some(existing) = env
@@ -634,6 +649,11 @@ impl RewardsContract {
         // Validate token
         let token_client = token::Client::new(&env, &token_addr);
         if token_client.try_symbol().is_err() {
+            return Err(Error::InvalidToken);
+        }
+
+        // Reject tokens that are not on the platform's supported-token whitelist.
+        if !Self::is_token_supported(&env, &token_addr) {
             return Err(Error::InvalidToken);
         }
 
@@ -1172,6 +1192,101 @@ impl RewardsContract {
             .instance()
             .get::<DataKey, Address>(&DataKey::TokenAddr)
             .ok_or(Error::NotInitialized)
+    }
+
+    // --- Supported-token whitelist (Issue #1349) ---
+
+    /// Returns true if `token` is allowed for funding/distribution.
+    ///
+    /// The whitelist is fail-open: until an admin enables it (by adding at least
+    /// one supported token), any valid token contract is accepted so existing
+    /// flows keep working. Once enabled, only addresses present in the list pass.
+    fn is_token_supported(env: &Env, token: &Address) -> bool {
+        if !env
+            .storage()
+            .instance()
+            .get::<DataKey, bool>(&DataKey::SupportedTokensEnabled)
+            .unwrap_or(false)
+        {
+            return true;
+        }
+        let list: Vec<Address> = env
+            .storage()
+            .instance()
+            .get(&DataKey::SupportedTokens)
+            .unwrap_or(Vec::new(env));
+        list.contains(token)
+    }
+
+    /// Add a token to the supported-token whitelist. Admin only.
+    /// Adding the first token enables enforcement for all subsequent
+    /// `fund_quest_with_token` / `distribute_reward_with_token` calls.
+    pub fn add_supported_token(env: Env, admin: Address, token: Address) -> Result<(), Error> {
+        admin.require_auth();
+        let stored = Self::get_admin(env.clone())?;
+        if stored != admin {
+            return Err(Error::Unauthorized);
+        }
+        let mut list: Vec<Address> = env
+            .storage()
+            .instance()
+            .get(&DataKey::SupportedTokens)
+            .unwrap_or(Vec::new(&env));
+        if !list.contains(&token) {
+            list.push_back(token);
+        }
+        env.storage().instance().set(&DataKey::SupportedTokens, &list);
+        env.storage()
+            .instance()
+            .set(&DataKey::SupportedTokensEnabled, &true);
+        extend_instance_ttl(&env);
+        Ok(())
+    }
+
+    /// Remove a token from the supported-token whitelist. Admin only.
+    /// When the last token is removed, enforcement is disabled (fail-open again).
+    pub fn remove_supported_token(env: Env, admin: Address, token: Address) -> Result<(), Error> {
+        admin.require_auth();
+        let stored = Self::get_admin(env.clone())?;
+        if stored != admin {
+            return Err(Error::Unauthorized);
+        }
+        let current: Vec<Address> = env
+            .storage()
+            .instance()
+            .get(&DataKey::SupportedTokens)
+            .unwrap_or(Vec::new(&env));
+        // Rebuild the list excluding the removed token (Vec has no in-place
+        // removal guarantee across SDK versions, so copy explicitly).
+        let mut list = Vec::new(&env);
+        for i in 0..current.len() {
+            if let Some(t) = current.get(i) {
+                if t != token {
+                    list.push_back(t);
+                }
+            }
+        }
+        env.storage().instance().set(&DataKey::SupportedTokens, &list);
+        if list.is_empty() {
+            env.storage()
+                .instance()
+                .set(&DataKey::SupportedTokensEnabled, &false);
+        }
+        extend_instance_ttl(&env);
+        Ok(())
+    }
+
+    /// Check whether a token is currently on the supported-token whitelist.
+    pub fn is_supported_token(env: Env, token: Address) -> bool {
+        Self::is_token_supported(&env, &token)
+    }
+
+    /// Return the full list of supported-token addresses.
+    pub fn get_supported_tokens(env: Env) -> Vec<Address> {
+        env.storage()
+            .instance()
+            .get(&DataKey::SupportedTokens)
+            .unwrap_or(Vec::new(&env))
     }
 
     /// Return aggregated platform statistics — Issue #717.

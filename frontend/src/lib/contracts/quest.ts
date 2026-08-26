@@ -27,8 +27,8 @@ const CONTRACT_ID = env.VITE_QUEST_CONTRACT_ID
 // Re-export so consumers can import the canonical contract types from either
 // `@/lib/contracts/quest` or `@/lib/contract-types`. Keeping both import paths
 // active matches the existing call sites; the types behind them are identical.
-export { Visibility, QuestStatus, type QuestInfo } from "../contract-types"
-import { Visibility, QuestStatus, type QuestInfo } from "../contract-types"
+export { Visibility, QuestStatus, type QuestInfo, type CategoryInfo } from "../contract-types"
+import { Visibility, QuestStatus, type QuestInfo, type CategoryInfo } from "../contract-types"
 
 export class QuestClient {
   private contract: Contract | null
@@ -131,6 +131,24 @@ export class QuestClient {
     ])
     if (!Array.isArray(result)) return []
     return result.map((r: unknown) => this.parseQuestInfo(r))
+  }
+
+  /**
+   * Returns metadata for a public category, including when the category listing
+   * will expire (`expiresAt`) so the UI can warn users before it disappears.
+   */
+  async getCategory(category: string): Promise<CategoryInfo | null> {
+    const result = await this.invokeRead("get_category", [
+      nativeToScVal(category, { type: "string" }),
+    ])
+    if (!result || typeof result !== "object") return null
+    const r = result as Record<string, unknown>
+    return {
+      category: String(r.category),
+      questCount: Number(r.quest_count),
+      ttlRemaining: Number(r.ttl_remaining),
+      expiresAt: Number(r.expires_at),
+    }
   }
 
   /**

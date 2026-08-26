@@ -12,7 +12,12 @@ const WALLET_WATCH_INTERVAL_MS = 3000
 export type WalletNetwork = "mainnet" | "testnet" | "standalone" | "futurenet" | "unknown"
 
 export type WalletErrorCode =
-  "freighter_not_installed" | "network_error" | "timeout" | "missing_api" | "unknown"
+  | "freighter_not_installed"
+  | "network_error"
+  | "timeout"
+  | "missing_api"
+  | "user_rejected"
+  | "unknown"
 
 export interface WalletErrorState {
   code: WalletErrorCode
@@ -259,12 +264,20 @@ function useWalletState(): WalletContextValue {
         normalized.includes("cancel") ||
         normalized.includes("denied")
       ) {
+        // Distinguish a user declining the connection from a network/timeout
+        // failure. Previously both resulted in a silent (null) error, leaving
+        // the user unable to tell whether to retry, switch wallets, or check
+        // their network.
         setState(s => ({
           ...s,
           loading: false,
-          error: null,
           connected: false,
           address: null,
+          error: {
+            code: "user_rejected",
+            message:
+              "You rejected the wallet connection request. Reconnect and approve the request to continue, or switch wallets if you changed your mind.",
+          },
         }))
         return
       }
