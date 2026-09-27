@@ -1,12 +1,13 @@
 #![no_std]
 
-use common::{extend_instance_ttl, extend_persistent_ttl, BUMP, THRESHOLD};
+use common::{extend_instance_ttl, extend_persistent_ttl};
 use soroban_sdk::{
-    contract, contracterror, contractimpl, contracttype, Address, BytesN, Env, String, Symbol, Vec,
+    contract, contracterror, contractimpl, contracttype, Address, BytesN, Env, IntoVal, String,
+    Symbol, Vec,
 };
-use stellar_access::ownable::{self as ownable, Ownable};
-use stellar_macros::{default_impl, only_owner};
-use stellar_tokens::non_fungible::{burnable::NonFungibleBurnable, Base};
+use stellar_access::ownable::{self as ownable};
+use stellar_macros::only_owner;
+use stellar_tokens::non_fungible::Base;
 
 #[contracttype]
 #[derive(Clone, Debug, PartialEq)]
@@ -15,6 +16,9 @@ pub struct CertificateMetadata {
     pub quest_name: String,
     pub quest_category: String,
     pub completion_date: u64,
+    /// Number of milestones in the quest at mint time. Surfaced on the
+    /// public certificate page so a viewer can see how much was completed.
+    pub milestone_count: u32,
     pub issuer: Address,
     pub recipient: Address,
 }
@@ -39,11 +43,11 @@ impl common::IsDataKey for DataKey {}
 #[repr(u32)]
 pub enum Error {
     /// Entity not found (shared code 1).
-    NotFound = common::ERR_NOT_FOUND as u32,
+    NotFound = 1,
     /// Caller is not authorized (shared code 2).
-    Unauthorized = common::ERR_UNAUTHORIZED as u32,
+    Unauthorized = 2,
     /// Invalid input provided (shared code 3).
-    InvalidInput = common::ERR_INVALID_INPUT as u32,
+    InvalidInput = 3,
     NotOwner = 10,
     AlreadyIssued = 20,
     InvalidQuest = 5,
@@ -52,7 +56,7 @@ pub enum Error {
     MilestoneContractNotSet = 8,
     NotCompleted = 9,
     /// Contract is administratively paused (shared code 400).
-    Paused = common::ERR_PAUSED as u32,
+    Paused = 400,
 }
 
 // BUMP and THRESHOLD now come from common
@@ -96,44 +100,63 @@ impl CertificateContract {
         recipient: Address,
         issuer: Address,
     ) -> Result<u32, Error> {
-        Self::require_not_paused(&env)?;
+        Self::internal_mint(
+            &env,
+            quest_id,
+            quest_name,
+            quest_category,
+            recipient,
+            issuer,
+        )
+    }
+
+    fn internal_mint(
+        env: &Env,
+        quest_id: u32,
+        quest_name: String,
+        quest_category: String,
+        recipient: Address,
+        issuer: Address,
+    ) -> Result<u32, Error> {
+        Self::require_not_paused(env)?;
         let cert_key = DataKey::QuestCertificate(quest_id, recipient.clone());
         if env.storage().persistent().has(&cert_key) {
             return Err(Error::AlreadyIssued);
         }
 
-        let token_id = Base::sequential_mint(&env, &recipient);
+        let token_id = Base::sequential_mint(env, &recipient);
 
         let metadata = CertificateMetadata {
             quest_id,
             quest_name: quest_name.clone(),
             quest_category,
             completion_date: env.ledger().timestamp(),
-            issuer: issuer.clone(),
+            milestone_count: Self::quest_milestone_count(env.clone(), quest_id),
+            issuer,
             recipient: recipient.clone(),
         };
 
         let metadata_key = DataKey::CertificateMetadata(token_id);
         env.storage().persistent().set(&metadata_key, &metadata);
-        extend_persistent_ttl(&env, &metadata_key);
+        extend_persistent_ttl(env, &metadata_key);
 
         env.storage().persistent().set(&cert_key, &token_id);
-        extend_persistent_ttl(&env, &cert_key);
+        extend_persistent_ttl(env, &cert_key);
 
         let user_key = DataKey::UserCertificates(recipient.clone());
         let mut certificates: Vec<u32> = env
             .storage()
             .persistent()
             .get(&user_key)
-            .unwrap_or(Vec::new(&env));
+            .unwrap_or(Vec::new(env));
         certificates.push_back(token_id);
         env.storage().persistent().set(&user_key, &certificates);
-        extend_persistent_ttl(&env, &user_key);
+        extend_persistent_ttl(env, &user_key);
 
-        extend_instance_ttl(&env);
+        extend_instance_ttl(env);
 
         env.events().publish(
-            (Symbol::new(&env, "certificate_minted"),),
+            (Symbol::new(env, "certificate_minted"),),
             (token_id, quest_id, recipient, quest_name),
         );
 
@@ -176,7 +199,7 @@ impl CertificateContract {
     ) -> Result<u32, Error> {
         Self::require_not_paused(&env)?;
         let owner = ownable::get_owner(&env).ok_or(Error::NotOwner)?;
-        Self::mint_certificate(env, quest_id, quest_name, quest_category, recipient, owner)
+        Self::internal_mint(&env, quest_id, quest_name, quest_category, recipient, owner)
     }
 
     pub fn get_certificate_details(
@@ -304,17 +327,40 @@ impl CertificateContract {
         }
         Ok(())
     }
-}
+
+    /// Resolve the number of milestones configured for `quest_id`.
+    ///
+    /// Best-effort: if the milestone contract hasn't been wired up via
+    /// `set_milestone_contract`, or the cross-contract read fails, we fall
+    /// back to 0 rather than failing the mint. The count is purely
+    /// informational metadata for the certificate display page.
+    fn quest_milestone_count(env: Env, quest_id: u32) -> u32 {
+        let milestone_contract: Option<Address> =
+            env.storage().instance().get(&DataKey::MilestoneContract);
+        match milestone_contract {
+            Some(contract) => env.invoke_contract(
+                &contract,
+                &Symbol::new(&env, "get_milestone_count"),
+                soroban_sdk::vec![&env, quest_id.into_val(&env)],
+            ),
+            None => 0,
+        }
+    }
 
     #[only_owner]
     pub fn set_milestone_contract(env: Env, milestone_contract: Address) -> Result<(), Error> {
-        env.storage().instance().set(&DataKey::MilestoneContract, &milestone_contract);
+        env.storage()
+            .instance()
+            .set(&DataKey::MilestoneContract, &milestone_contract);
         extend_instance_ttl(&env);
         Ok(())
     }
 
     pub fn get_milestone_contract(env: Env) -> Result<Address, Error> {
-        env.storage().instance().get(&DataKey::MilestoneContract).ok_or(Error::MilestoneContractNotSet)
+        env.storage()
+            .instance()
+            .get(&DataKey::MilestoneContract)
+            .ok_or(Error::MilestoneContractNotSet)
     }
 
     pub fn verify_and_issue(
@@ -344,13 +390,20 @@ impl CertificateContract {
             return Err(Error::NotCompleted);
         }
 
-        // Mint using the contract's own address as the issuer
-        Self::mint_certificate(env.clone(), quest_id, quest_name, quest_category, recipient, env.current_contract_address())
+        // Mint using the contract's own address as the issuer via decoupled internal helper
+        Self::internal_mint(
+            &env,
+            quest_id,
+            quest_name,
+            quest_category,
+            recipient,
+            env.current_contract_address(),
+        )
     }
 
     // SBT specific: Expose balance_of and owner_of, but NOT transfer
     pub fn balance_of(env: Env, id: Address) -> i128 {
-        Base::balance(&env, &id)
+        Base::balance(&env, &id).into()
     }
 
     pub fn owner_of(env: Env, token_id: u32) -> Option<Address> {
@@ -365,14 +418,6 @@ impl CertificateContract {
         Base::symbol(&env)
     }
 }
-
-#[default_impl]
-#[contractimpl]
-impl NonFungibleBurnable for CertificateContract {}
-
-#[default_impl]
-#[contractimpl]
-impl Ownable for CertificateContract {}
 
 #[cfg(test)]
 mod test;

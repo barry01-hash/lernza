@@ -1,9 +1,21 @@
-import { Suspense, lazy } from "react"
-import { ArrowLeft, Wallet } from "lucide-react"
+import { Suspense, lazy, useState } from "react"
+import {
+  ArrowLeft,
+  Wallet,
+  Clock,
+  AlertTriangle,
+  RefreshCw,
+  Check,
+  Bookmark,
+  LayoutTemplate,
+  X,
+} from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { useWallet } from "@/hooks/use-wallet"
 import { QuestCreationProvider, useQuestCreation } from "./context"
 import { StepIndicator } from "./types"
+import { QUEST_TEMPLATES } from "./templates"
+import { questDrafts } from "./drafts"
 
 const Step1Form = lazy(() => import("./step1").then(m => ({ default: m.Step1Form })))
 const Step2Form = lazy(() => import("./step2").then(m => ({ default: m.Step2Form })))
@@ -18,7 +30,26 @@ interface CreateQuestProps {
 }
 
 function CreateQuestContent({ onBack }: CreateQuestProps) {
-  const { currentStep } = useQuestCreation()
+  const {
+    currentStep,
+    step1Data,
+    step2Data,
+    loadDraft,
+    lastSaved,
+    hasConflict,
+    hasDraftToRestore,
+    draftTimestamp,
+    restoreDraft,
+    dismissDraft,
+  } = useQuestCreation()
+  const [showLibrary, setShowLibrary] = useState(false)
+  const [notice, setNotice] = useState<string | null>(null)
+
+  const saveDraft = () => {
+    const id = `${Date.now()}`
+    questDrafts.save({ id, step1: step1Data, step2: step2Data, currentStep })
+    setNotice("Draft saved on this device. You can reopen it from Drafts.")
+  }
 
   return (
     <div className="relative mx-auto max-w-2xl px-4 py-8 sm:px-6">
@@ -35,13 +66,107 @@ function CreateQuestContent({ onBack }: CreateQuestProps) {
         Back to Dashboard
       </button>
 
-      {/* Page heading */}
-      <div className="animate-fade-in-up relative mb-6">
-        <h1 className="text-3xl font-semibold">Create a Quest</h1>
-        <p className="text-muted-foreground mt-1 text-sm">
-          Set up milestones and fund the reward pool to incentivize learners.
-        </p>
+      {/* Draft recovery banner */}
+      {hasDraftToRestore && (
+        <div className="mb-6 rounded-lg border border-primary/30 bg-primary/10 p-4 text-sm text-foreground shadow-sm">
+          <div className="flex items-start justify-between gap-3">
+            <div className="flex items-start gap-2.5">
+              <RefreshCw className="h-4 w-4 mt-0.5 text-primary shrink-0" />
+              <div>
+                <span className="font-semibold">Unsaved draft found.</span>
+                <p className="mt-0.5 text-xs text-muted-foreground">
+                  You have an auto-saved draft from{" "}
+                  {draftTimestamp ? draftTimestamp.toLocaleTimeString() : "a previous session"}.
+                  Would you like to restore it?
+                </p>
+              </div>
+            </div>
+            <div className="flex items-center gap-2 shrink-0">
+              <Button size="sm" onClick={restoreDraft} className="h-7 px-2.5 text-xs">
+                Restore Draft
+              </Button>
+              <Button variant="ghost" size="sm" onClick={dismissDraft} className="h-7 px-2 text-xs">
+                Discard
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Conflict detection banner */}
+      {hasConflict && (
+        <div className="mb-6 rounded-lg border border-warning/40 bg-warning/10 p-4 text-sm text-foreground shadow-sm">
+          <div className="flex items-center gap-2.5">
+            <AlertTriangle className="h-4 w-4 text-warning shrink-0" />
+            <div className="flex-1">
+              <span className="font-semibold">Editing conflict detected!</span>
+              <p className="mt-0.5 text-xs text-muted-foreground">
+                This quest draft was recently modified in another browser tab. Saving here may overwrite those changes.
+              </p>
+            </div>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={restoreDraft}
+              className="h-7 px-2.5 text-xs border-warning/40 text-foreground"
+            >
+              Sync Latest
+            </Button>
+          </div>
+        </div>
+      )}
+
+      {/* Page heading with Auto-save indicator */}
+      <div className="animate-fade-in-up relative mb-6 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
+        <div>
+          <h1 className="text-3xl font-semibold">Create a Quest</h1>
+          <p className="text-muted-foreground mt-1 text-sm">
+            Set up milestones and fund the reward pool to incentivize learners.
+          </p>
+        </div>
+
+        {/* Visual indicator showing last saved time */}
+        <div
+          data-testid="draft-status-indicator"
+          className="inline-flex items-center gap-1.5 self-start sm:self-auto rounded-full border border-border bg-muted/50 px-2.5 py-1 text-[11px] text-muted-foreground font-mono"
+        >
+          {lastSaved ? (
+            <>
+              <Check className="h-3 w-3 text-emerald-500" />
+              <span>Saved {lastSaved.toLocaleTimeString()}</span>
+            </>
+          ) : (
+            <>
+              <Clock className="h-3 w-3 text-muted-foreground" />
+              <span>Auto-save active</span>
+            </>
+          )}
+        </div>
       </div>
+
+      <div className="relative mb-6 flex flex-wrap gap-2">
+        <Button variant="outline" size="sm" onClick={() => setShowLibrary(value => !value)}>
+          <LayoutTemplate className="h-4 w-4" /> Templates
+        </Button>
+        <Button variant="outline" size="sm" onClick={saveDraft}>
+          <Bookmark className="h-4 w-4" /> Save draft
+        </Button>
+        {notice && <span className="text-muted-foreground self-center text-xs font-semibold">{notice}</span>}
+      </div>
+
+      {showLibrary && (
+        <div className="border-border bg-background relative mb-6 border p-4 shadow-md">
+          <button aria-label="Close template and draft library" onClick={() => setShowLibrary(false)} className="absolute right-3 top-3"><X className="h-4 w-4" /></button>
+          <p className="mb-3 text-xs font-bold uppercase text-muted-foreground">Start from a template</p>
+          <div className="grid gap-2 sm:grid-cols-2">
+            {QUEST_TEMPLATES.map(template => <button key={template.id} type="button" onClick={() => { loadDraft(template.step1, template.step2, 1); setShowLibrary(false); setNotice(`${template.name} loaded — customize it before publishing.`) }} className="border-border hover:bg-secondary border p-3 text-left">
+              <span className="block text-sm font-semibold">{template.name}</span><span className="text-muted-foreground text-xs">{template.description}</span>
+            </button>)}
+          </div>
+          <p className="mb-2 mt-5 text-xs font-bold uppercase text-muted-foreground">Saved drafts</p>
+          {questDrafts.list().length ? <div className="space-y-2">{questDrafts.list().map(draft => <div key={draft.id} className="border-border flex items-center justify-between border p-2"><span className="text-sm font-semibold">{draft.step1.name || "Untitled quest"}</span><div className="flex gap-2"><button className="text-xs font-bold underline" onClick={() => { loadDraft(draft.step1, draft.step2, draft.currentStep); setShowLibrary(false) }}>Open</button><button className="text-destructive text-xs font-bold underline" onClick={() => { questDrafts.remove(draft.id); setShowLibrary(false); setShowLibrary(true) }}>Delete</button></div></div>)}</div> : <p className="text-muted-foreground text-sm">No saved drafts yet.</p>}
+        </div>
+      )}
 
       {/* Step indicator */}
       <div className="animate-fade-in-up stagger-1 relative">
@@ -87,7 +212,7 @@ export function CreateQuest({ onBack }: CreateQuestProps) {
               </p>
               <Button
                 size="lg"
-                onClick={connect}
+                onClick={() => void connect()}
                 disabled={loading}
                 className="shimmer-on-hover w-full"
               >

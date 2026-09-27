@@ -6,6 +6,18 @@ import { Badge } from "@/components/ui/badge"
 import { useScrollLock } from "@/hooks/use-scroll-lock"
 import { formatUsdc } from "@/lib/utils"
 import type { ParsedMilestone } from "@/pages/create-quest/csv-parser"
+import { useTokenSymbol } from "@/hooks/use-token-symbol"
+
+export interface ImportedQuest {
+  name: string
+  description: string
+  milestones: {
+    title: string
+    description: string
+    rewardAmount: number
+    requiresPrevious: boolean
+  }[]
+}
 
 interface ImportQuestDialogProps {
   isOpen: boolean
@@ -26,6 +38,8 @@ export function ImportQuestDialog({
   existingCount,
   questName,
 }: ImportQuestDialogProps) {
+export function ImportQuestDialog({ isOpen, onClose, onConfirm, data }: ImportQuestDialogProps) {
+  const { symbol } = useTokenSymbol()
   const dialogRef = useRef<HTMLDivElement>(null)
   const previousFocusRef = useRef<HTMLElement | null>(null)
   const confirmButtonRef = useRef<HTMLButtonElement>(null)
@@ -151,6 +165,26 @@ export function ImportQuestDialog({
                         {ms.title}
                       </p>
                       <p className="text-muted-foreground line-clamp-2 text-xs">{ms.description}</p>
+              <div className="mt-1 max-h-[30vh] space-y-2 overflow-y-auto pr-1">
+                {data.milestones.map((ms, i) => (
+                  <div key={i} className="bg-muted/50 border-border border p-2 shadow-sm">
+                    <div className="flex items-start justify-between gap-2">
+                      <div className="min-w-0">
+                        <p className="truncate text-sm font-bold">{ms.title}</p>
+                        <p className="text-muted-foreground line-clamp-2 text-xs">
+                          {ms.description}
+                        </p>
+                      </div>
+                      <div className="flex shrink-0 flex-col items-end gap-1">
+                        {ms.requiresPrevious && i > 0 && (
+                          <Badge variant="outline" className="text-[10px]">
+                            Sequential
+                          </Badge>
+                        )}
+                        <Badge variant="secondary" className="text-[10px] tabular-nums">
+                          {formatTokens(ms.rewardAmount, 7, symbol)}
+                        </Badge>
+                      </div>
                     </div>
                     <Badge variant="secondary" className="shrink-0 text-[10px] tabular-nums">
                       {formatUsdc(ms.rewardAmount)} USDC

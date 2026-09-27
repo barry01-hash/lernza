@@ -1,20 +1,65 @@
+// In-memory cache for completion status: key -> { completed: boolean, timestamp: number }
+const completionCache = new Map<string, { completed: boolean; timestamp: number }>()
+const CACHE_TTL_MS = 60_000 // 60 seconds TTL
+
+async function fetchWithConcurrency<T, R>(
+  items: T[],
+  concurrency: number,
+  fn: (item: T) => Promise<R>
+): Promise<R[]> {
+  const results: R[] = new Array(items.length)
+  let currentIndex = 0
+
+  const workers = Array.from({ length: Math.min(concurrency, items.length) }, async () => {
+    while (currentIndex < items.length) {
+      const idx = currentIndex++
+      results[idx] = await fn(items[idx])
+    }
+  })
+
+  await Promise.all(workers)
+  return results
+}
+
 // frontend/src/pages/quest.tsx (wired to on-chain data)
-import { useState, useMemo, useCallback } from "react"
+import { useState, useMemo, useCallback, useEffect } from "react"
 import { ToastContainer } from "@/components/toast"
 import { useToast } from "@/hooks/use-toast"
-import { useQuest, useMilestones, useEnrollees, useRewardPool } from "@/hooks/use-quest-data"
+import { useWallet } from "@/hooks/use-wallet"
+import {
+  useQuest,
+  useMilestones,
+  useEnrollees,
+  useRewardPool,
+  useTotalReservedReward,
+} from "@/hooks/use-quest-data"
 import { milestoneClient } from "@/lib/contracts/milestone"
+import type { DisputeOutcome } from "@/lib/contracts/milestone-client"
+import { questClient } from "@/lib/contracts/quest"
+import { PageMetadata } from "@/components/PageMetadata"
+import { buildQuestMetadata } from "@/lib/questMetadata"
+import type { QuestInfo } from "@/lib/contract-types"
 import { QuestHeaderPanel } from "@/components/quest/QuestHeaderPanel"
 import { StatsPanel } from "@/components/quest/StatsPanel"
 import { ProgressPanel } from "@/components/quest/ProgressPanel"
-import { TabsNavigation } from "@/components/quest/TabsNavigation"
-import { MilestonesSection } from "@/components/quest/MilestonesSection"
+import { TabsNavigation, type QuestTab } from "@/components/quest/TabsNavigation"
+import {
+  MilestonesSection,
+  type MilestoneDisputeState,
+  type OwnerDispute
+} from "@/components/quest/MilestonesSection"
+import { EnrolleesSection } from "@/components/quest/EnrolleesSection"
 import { BatchClaimResultDialog } from "@/components/quest/BatchClaimResultDialog"
 import { TimelineSection } from "@/components/quest/TimelineSection"
+import { QuestAnalyticsDashboard } from "@/components/analytics/QuestAnalyticsDashboard"
+import { ReferralCard } from "@/components/referral/ReferralCard"
+import { ReportQuestDialog } from "@/components/report-quest-dialog"
 import { batchClaimRewards } from "@/lib/contracts/batch-claims"
 import { Button } from "@/components/ui/button"
 import { SectionErrorBoundary } from "@/components/error-boundary"
 import { LoadingState } from "@/components/ui/async-states"
+import { TransferOwnershipDialog } from "@/components/quest/transfer-ownership-dialog"
+import { storePendingReferral, recordReferralEnrollment } from "@/lib/referrals"
 import type { BatchClaimSummary, MilestoneClaimResult } from "@/lib/contract-types"
 
 interface QuestViewProps {
@@ -22,16 +67,35 @@ interface QuestViewProps {
   onBack: () => void
 }
 
-type Tab = "milestones" | "enrollees" | "timeline"
-
 export function QuestView({ questId, onBack }: QuestViewProps) {
-  const [activeTab, setActiveTab] = useState<Tab>("milestones")
+  const [activeTab, setActiveTab] = useState<QuestTab>("milestones")
+  const [isTransferDialogOpen, setIsTransferDialogOpen] = useState(false)
   const { toasts, addToast, removeToast } = useToast()
+  const { address } = useWallet()
+
+  useEffect(() => {
+    if (typeof window !== "undefined") {
+      const params = new URLSearchParams(window.location.search)
+      const ref = params.get("ref")
+      if (ref) {
+        storePendingReferral(questId, ref)
+      }
+    }
+  }, [questId])
 
   const { data: quest, isLoading: questLoading, error: questError } = useQuest(questId)
-  const { data: milestonesData, isLoading: milestonesLoading, error: milestonesError } = useMilestones(questId)
-  const { data: enrolleesData, isLoading: enrolleesLoading, error: enrolleesError } = useEnrollees(questId)
+  const {
+    data: milestonesData,
+    isLoading: milestonesLoading,
+    error: milestonesError,
+  } = useMilestones(questId)
+  const {
+    data: enrolleesData,
+    isLoading: enrolleesLoading,
+    error: enrolleesError,
+  } = useEnrollees(questId)
   const { data: poolBalance = 0n } = useRewardPool(questId)
+  const { data: reservedReward = 0n } = useTotalReservedReward(questId)
 
   const milestones = milestonesData ?? []
   const enrolleeAddresses = enrolleesData ?? []
@@ -42,11 +106,14 @@ export function QuestView({ questId, onBack }: QuestViewProps) {
   const [isClaimDialogOpen, setIsClaimDialogOpen] = useState(false)
   const [isRetrying, setIsRetrying] = useState(false)
 
+  // Report state
+  const [isReportOpen, setIsReportOpen] = useState(false)
+
   // Fetch completion status for each enrollee x milestone combination
   const [completionMap, setCompletionMap] = useState<Record<string, boolean>>({})
 
-  // Load completions when enrollees or milestones change
-  useMemo(() => {
+  // Load completions when enrollees or milestones change with caching and 15-worker concurrency
+  useEffect(() => {
     if (enrolleeAddresses.length === 0 || milestones.length === 0) {
       setCompletionMap({})
       return
@@ -56,13 +123,30 @@ export function QuestView({ questId, onBack }: QuestViewProps) {
 
     const loadCompletions = async () => {
       try {
-        const entries: [string, boolean][] = []
+        const pairs: Array<{ enrollee: string; milestoneId: number }> = []
         for (const enrollee of enrolleeAddresses) {
           for (const milestone of milestones) {
-            const completed = await milestoneClient.isCompleted(questId, milestone.id, enrollee)
-            entries.push([`${enrollee}-${milestone.id}`, completed])
+            pairs.push({ enrollee, milestoneId: milestone.id })
           }
         }
+
+        const now = Date.now()
+        const entries = await fetchWithConcurrency(pairs, 15, async ({ enrollee, milestoneId }) => {
+          const cacheKey = `${questId}-${enrollee}-${milestoneId}`
+          const cached = completionCache.get(cacheKey)
+          if (cached && now - cached.timestamp < CACHE_TTL_MS) {
+            return [`${enrollee}-${milestoneId}`, cached.completed] as [string, boolean]
+          }
+
+          try {
+            const completed = await milestoneClient.isCompleted(questId, milestoneId, enrollee)
+            completionCache.set(cacheKey, { completed, timestamp: now })
+            return [`${enrollee}-${milestoneId}`, completed] as [string, boolean]
+          } catch {
+            return [`${enrollee}-${milestoneId}`, false] as [string, boolean]
+          }
+        })
+
         if (!cancelled) {
           setCompletionMap(Object.fromEntries(entries))
         }
@@ -100,9 +184,7 @@ export function QuestView({ questId, onBack }: QuestViewProps) {
   // Memoised derivations
   const { totalReward, completedMilestones, isComplete, earnedReward } = useMemo(() => {
     const total = milestones.reduce((sum, m) => sum + Number(m.rewardAmount), 0)
-    const completedSet = new Set(
-      completions.filter(c => c.completed).map(c => c.milestoneId)
-    )
+    const completedSet = new Set(completions.filter(c => c.completed).map(c => c.milestoneId))
     const completed = completedSet.size
     return {
       totalReward: total,
@@ -115,16 +197,196 @@ export function QuestView({ questId, onBack }: QuestViewProps) {
   }, [milestones, completions])
 
   const handleAddEnrollee = useCallback(() => {
+    if (address) {
+      recordReferralEnrollment(questId, address)
+    }
     addToast("Add enrollee clicked", "info")
-  }, [addToast])
+  }, [addToast, address, questId])
+
+  const handleRemoveEnrollee = useCallback(
+    async (enrollee: { address: string }) => {
+      if (!address || !quest || quest.owner !== address) {
+        addToast("Only the quest owner can remove a learner.", "error")
+        return
+      }
+      if (
+        typeof window !== "undefined" &&
+        !window.confirm(
+          "Remove this learner? Verified milestones and earned rewards stay protected. A learner with a submission awaiting review or reward settlement cannot be removed until the review is resolved."
+        )
+      ) {
+        return
+      }
+      try {
+        await questClient.removeEnrollee(address, questId, enrollee.address)
+        addToast("Learner removed. Verified work and earned rewards remain protected.", "success")
+        window.location.reload()
+      } catch (error) {
+        const message = error instanceof Error ? error.message : "Removal failed."
+        addToast(
+          message.includes("RemovalBlockedByPendingApproval") ||
+            message.includes("LeaveBlockedByPendingApproval")
+            ? "Removal is blocked while a submission is awaiting review or reward settlement."
+            : message,
+          "error"
+        )
+      }
+    },
+    [addToast, address, quest, questId]
+  )
 
   const handleAddMilestone = useCallback(() => {
     addToast("Add milestone clicked", "info")
   }, [addToast])
 
-  const handleVerifyCompletion = useCallback((milestoneId: number) => {
-    addToast(`Verified milestone ${milestoneId}`, "success")
-  }, [addToast])
+  const handleVerifyCompletion = useCallback(
+    (milestoneId: number) => {
+      addToast(`Verified milestone ${milestoneId}`, "success")
+    },
+    [addToast]
+  )
+
+  // Dispute state for the connected learner, so an appealable submission shows
+  // the right affordance and status. See issue #1614.
+  const [disputeStates, setDisputeStates] = useState<
+    Map<number, MilestoneDisputeState>
+  >(new Map())
+  const [isDisputePending, setIsDisputePending] = useState(false)
+  const [ownerDisputes, setOwnerDisputes] = useState<OwnerDispute[]>([])
+  const isQuestOwner = !!address && !!quest?.owner && quest.owner === address
+
+  // Owners additionally see every open dispute awaiting their ruling.
+  useEffect(() => {
+    if (!isQuestOwner) {
+      setOwnerDisputes([])
+      return
+    }
+
+    let cancelled = false
+
+    const loadOwnerDisputes = async () => {
+      try {
+        const entries = await milestoneClient.getOpenDisputes(questId, 0, 100)
+        if (cancelled) return
+        setOwnerDisputes(
+          entries.map(entry => ({
+            milestoneId: entry.milestoneId,
+            enrollee: entry.enrollee,
+            reason: entry.record.reason
+          }))
+        )
+      } catch {
+        // Non-fatal: the resolve affordance simply stays hidden.
+      }
+    }
+
+    void loadOwnerDisputes()
+    return () => {
+      cancelled = true
+    }
+  }, [isQuestOwner, questId])
+
+  useEffect(() => {
+    if (!address || milestones.length === 0) {
+      setDisputeStates(new Map())
+      return
+    }
+
+    let cancelled = false
+
+    const loadDisputes = async () => {
+      try {
+        const entries: [number, MilestoneDisputeState][] = []
+        for (const milestone of milestones) {
+          const [status, open, cooldown] = await Promise.all([
+            milestoneClient.getDisputeStatus(questId, milestone.id, address),
+            milestoneClient.hasOpenDispute(questId, milestone.id, address),
+            milestoneClient.getDisputeCooldownRemaining(questId, milestone.id, address)
+          ])
+          if (status === null) continue
+          entries.push([
+            milestone.id,
+            {
+              status,
+              reason: "",
+              // A closed dispute with a live cooldown means "recently ruled".
+              cooldownSeconds: open ? 0 : cooldown
+            }
+          ])
+        }
+        if (!cancelled) setDisputeStates(new Map(entries))
+      } catch {
+        // Non-fatal: the dispute affordance simply stays hidden.
+      }
+    }
+
+    void loadDisputes()
+    return () => {
+      cancelled = true
+    }
+  }, [address, questId, milestones])
+
+  const handleOpenDispute = useCallback(
+    async (milestoneId: number, reason: string) => {
+      if (!address) return
+      setIsDisputePending(true)
+      try {
+        await milestoneClient.openDispute(address, questId, milestoneId, reason, {
+          onSigning: () => addToast("Opening dispute…", "info"),
+          onSuccess: () => {
+            addToast("Dispute opened. The quest owner will review it.", "success")
+            setDisputeStates(
+              prev =>
+                new Map(prev).set(milestoneId, { status: 0, reason, cooldownSeconds: 0 })
+            )
+          },
+          onError: err => addToast(String(err), "error", 5000)
+        })
+      } catch (err) {
+        addToast(err instanceof Error ? err.message : String(err), "error", 5000)
+      } finally {
+        setIsDisputePending(false)
+      }
+    },
+    [address, questId, addToast]
+  )
+
+  const handleResolveDispute = useCallback(
+    async (
+      milestoneId: number,
+      enrollee: string,
+      outcome: DisputeOutcome,
+      note?: string
+    ) => {
+      if (!address) return
+      setIsDisputePending(true)
+      try {
+        await milestoneClient.resolveDispute(
+          address,
+          questId,
+          milestoneId,
+          enrollee,
+          outcome,
+          note,
+          {
+            onSuccess: () => addToast("Dispute resolved.", "success"),
+            onError: err => addToast(String(err), "error", 5000)
+          }
+        )
+        setOwnerDisputes(prev => prev.filter(d => d.milestoneId !== milestoneId))
+        setDisputeStates(prev => {
+          const next = new Map(prev)
+          next.delete(milestoneId)
+          return next
+        })
+      } catch (err) {
+        addToast(err instanceof Error ? err.message : String(err), "error", 5000)
+      } finally {
+        setIsDisputePending(false)
+      }
+    },
+    [address, questId, addToast]
+  )
 
   const handleClaimRewards = useCallback(
     async (
@@ -268,9 +530,7 @@ export function QuestView({ questId, onBack }: QuestViewProps) {
   if (error || !quest) {
     return (
       <div className="mx-auto max-w-6xl px-4 py-20 text-center sm:px-6">
-        <h2 className="mb-4 text-2xl font-semibold">
-          {error || "Quest not found"}
-        </h2>
+        <h2 className="mb-4 text-2xl font-semibold">{error || "Quest not found"}</h2>
         <Button variant="outline" onClick={onBack}>
           Go back
         </Button>
@@ -285,6 +545,8 @@ export function QuestView({ questId, onBack }: QuestViewProps) {
     title: m.title,
     description: m.description,
     rewardAmount: Number(m.rewardAmount),
+    prerequisiteIds: m.prerequisiteIds,
+    deadline: m.deadline,
   }))
 
   return (
@@ -297,9 +559,11 @@ export function QuestView({ questId, onBack }: QuestViewProps) {
           questName={quest.name}
           questDescription={quest.description}
           isComplete={isComplete}
+          isArchived={quest.status === 1 || String(quest.status) === "Archived"}
           onBack={onBack}
           onAddEnrollee={handleAddEnrollee}
           onAddMilestone={handleAddMilestone}
+          onTransferOwnership={address && quest?.owner === address ? () => setIsTransferDialogOpen(true) : undefined}
           onToast={addToast}
         />
       </SectionErrorBoundary>
@@ -309,6 +573,7 @@ export function QuestView({ questId, onBack }: QuestViewProps) {
           enrolleesCount={enrollees.length}
           milestonesCount={milestones.length}
           poolBalance={Number(poolBalance)}
+          reservedReward={Number(reservedReward)}
           totalReward={totalReward}
         />
 
@@ -324,6 +589,8 @@ export function QuestView({ questId, onBack }: QuestViewProps) {
         onTabChange={setActiveTab}
         milestonesCount={milestones.length}
         enrolleesCount={enrollees.length}
+        showAnalytics={true}
+        showReferrals={true}
       />
 
       {activeTab === "milestones" && (
@@ -335,6 +602,12 @@ export function QuestView({ questId, onBack }: QuestViewProps) {
             questId={questId}
             onAddMilestone={handleAddMilestone}
             onVerifyCompletion={handleVerifyCompletion}
+            disputeStates={disputeStates}
+            ownerDisputes={ownerDisputes}
+            canResolveDisputes={isQuestOwner}
+            onOpenDispute={isQuestOwner ? undefined : handleOpenDispute}
+            onResolveDispute={isQuestOwner ? handleResolveDispute : undefined}
+            isDisputePending={isDisputePending}
           />
         </SectionErrorBoundary>
       )}
@@ -348,6 +621,9 @@ export function QuestView({ questId, onBack }: QuestViewProps) {
             onAddEnrollee={handleAddEnrollee}
             onClaimRewards={handleClaimRewards}
             isClaiming={isClaiming}
+            onRemoveEnrollee={
+              address && quest?.owner === address ? handleRemoveEnrollee : undefined
+            }
           />
         </SectionErrorBoundary>
       )}
@@ -358,6 +634,68 @@ export function QuestView({ questId, onBack }: QuestViewProps) {
         </SectionErrorBoundary>
       )}
 
+      {activeTab === "referrals" && (
+        <SectionErrorBoundary label="Refer & Earn">
+          <div className="mx-auto max-w-xl py-4">
+            <ReferralCard
+              questId={questId}
+              questTitle={quest.name}
+              userAddress={address}
+              onRewardClaimed={amt => addToast(`Claimed ${amt} referral bonus tokens!`, "success")}
+            />
+          </div>
+        </SectionErrorBoundary>
+      )}
+
+      {activeTab === "analytics" && (
+        <SectionErrorBoundary label="Quest Analytics">
+          <QuestAnalyticsDashboard
+            questId={questId}
+            questTitle={quest.name}
+            createdAt={quest.createdAt}
+            totalEnrollees={enrollees.length}
+            completedLearners={
+              enrollees.filter(e => {
+                const userCompletions = completions.filter(
+                  c => c.enrollee === e.address && c.completed
+                )
+                return userCompletions.length === milestones.length && milestones.length > 0
+              }).length
+            }
+            inProgressLearners={
+              enrollees.filter(e => {
+                const userCompletions = completions.filter(
+                  c => c.enrollee === e.address && c.completed
+                )
+                return userCompletions.length > 0 && userCompletions.length < milestones.length
+              }).length
+            }
+            stalledLearners={
+              enrollees.filter(e => {
+                const userCompletions = completions.filter(
+                  c => c.enrollee === e.address && c.completed
+                )
+                return userCompletions.length === 0
+              }).length
+            }
+            totalDistributedTokens={Number(reservedReward)}
+            poolRemaining={Number(poolBalance)}
+          />
+        </SectionErrorBoundary>
+      )}
+
+      <div className="mt-8 flex justify-center">
+        <Button
+          variant="ghost"
+          size="sm"
+          aria-label="Report this quest"
+          onClick={() => setIsReportOpen(true)}
+        >
+          Report this quest
+        </Button>
+      </div>
+
+      {quest && <PageMetadata {...buildQuestMetadata(quest as unknown as QuestInfo, questId)} />}
       <ToastContainer toasts={toasts} onRemove={removeToast} />
 
       <BatchClaimResultDialog
@@ -367,6 +705,23 @@ export function QuestView({ questId, onBack }: QuestViewProps) {
         onRetryFailed={handleRetryFailed}
         isRetrying={isRetrying}
       />
+
+      <ReportQuestDialog
+        isOpen={isReportOpen}
+        questId={questId}
+        questName={quest.name}
+        onClose={() => setIsReportOpen(false)}
+      />
+
+      {address && quest?.owner === address && (
+        <TransferOwnershipDialog
+          open={isTransferDialogOpen}
+          questId={questId}
+          questName={quest.name}
+          currentOwner={quest.owner}
+          onClose={() => setIsTransferDialogOpen(false)}
+        />
+      )}
     </div>
   )
 }

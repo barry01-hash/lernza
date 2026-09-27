@@ -1,6 +1,9 @@
 import { MAX_MILESTONES } from "@/lib/contract-types"
 import { milestoneSchema } from "./types"
 
+/** A quest accepts at most this many milestones (#1617). */
+export const MAX_MILESTONES_PER_QUEST = 50
+
 export interface ParsedMilestone {
   title: string
   description: string
@@ -126,6 +129,7 @@ export function parseCsvMilestones(csvText: string): CsvParseResult {
       errors.push({ row: rowNum, field: "rewardAmount", message: parsedReward.error })
       continue
     }
+    const rewardAmount = parseFloat(rewardStr.replace(/[$,]/g, "").trim())
 
     const rawObj = {
       title,
@@ -148,6 +152,11 @@ export function parseCsvMilestones(csvText: string): CsvParseResult {
       } else {
         milestones.push(valResult.data)
       }
+      milestones.push({
+        title: valResult.data.title,
+        description: valResult.data.description,
+        rewardAmount: valResult.data.rewardAmount,
+      })
     } else {
       valResult.error.issues.forEach(issue => {
         errors.push({
@@ -156,6 +165,21 @@ export function parseCsvMilestones(csvText: string): CsvParseResult {
           message: issue.message,
         })
       })
+    }
+  }
+
+  // Reject files that would push the quest past the on-chain milestone cap.
+  if (milestones.length + errors.length > MAX_MILESTONES_PER_QUEST) {
+    return {
+      milestones: [],
+      errors: [
+        ...errors,
+        {
+          row: 0,
+          field: "file",
+          message: `A quest accepts at most ${MAX_MILESTONES_PER_QUEST} milestones.`
+        }
+      ]
     }
   }
 
@@ -168,6 +192,7 @@ export function parseCsvMilestones(csvText: string): CsvParseResult {
 export function generateCsvTemplate(): string {
   return [
     "milestone_title,description,reward_amount",
+    "title,description,rewardAmount",
     '"Complete Environment Setup","Set up development tools and connect wallet",50',
     '"Hello Soroban","Write your first Soroban smart contract in Rust",100',
     '"Deploy to Testnet","Deploy smart contract to Stellar Testnet and execute tests",150',

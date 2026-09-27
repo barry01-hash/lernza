@@ -4,24 +4,35 @@ import { xdr } from "@stellar/stellar-sdk"
 import { server, withRpcReadThrottle, withTimeout, RPC_TIMEOUT_MS } from "@/lib/contracts/client"
 import { queryClient } from "@/lib/query-client"
 import { useNotifications } from "@/contexts/notification-context"
-import { env } from "@/lib/env"
+import { contractAddresses } from "@/lib/contracts/config"
 
 /**
  * Known Soroban contract event topics emitted by the lernza contracts.
  * Topics are 4-byte hex-encoded symbols per the Stellar contract event spec.
  */
-const TOPICS = {
-  milestone_completed: "6d696c6573746f6e655f636f6d706c65746564",
-  reward_distributed: "7265776172645f6469737472696275746564",
-  reward_funded: "7265776172645f66756e646564",
-  enrollee_added: "656e726f6c6c65655f6164646564",
-  quest_archived: "71756573745f6172636869766564",
-  quest_cancelled: "71756573745f63616e63656c6c6564",
-  peer_approved: "706565725f617070726f766564",
-  certificate_minted: "63657274696669636174655f6d696e746564",
-} as const
-
-type EventTopicKey = keyof typeof TOPICS
+type EventTopicKey =
+  | "milestone_completed"
+  | "reward_distributed"
+  | "reward_funded"
+  | "enrollee_added"
+  | "quest_archived"
+  | "quest_cancelled"
+  | "peer_approved"
+  | "certificate_minted"
+  | "quest_created"
+  | "quest_updated"
+  | "creator_verified"
+  | "creator_verification_revoked"
+  | "admin_transferred"
+  | "quest_ttl_extended"
+  | "distribution_mode_set"
+  | "reward_refunded"
+  | "milestone_partial"
+  | "pending_reward_released"
+  | "certificate_mint_failed"
+  | "milestone_feedback"
+  | "dispute_initiated"
+  | "dispute_resolved"
 
 const POLL_INTERVAL_MS = 10_000
 
@@ -83,12 +94,25 @@ function matchTopic(event: rpc.Api.EventResponse, topicSymbol: string): boolean 
 
 export interface ParsedEvent {
   type: EventTopicKey
-  questId: number
+  questId?: number
   milestoneId?: number
   enrollee?: string
   amount?: bigint
   ledger: number
   txHash: string
+  admin?: string
+  creator?: string
+  previousAdmin?: string
+  newAdmin?: string
+  mode?: number
+  flatReward?: bigint
+  actor?: string
+  authority?: string
+  criteriaMet?: number
+  maxCriteria?: number
+  reviewer?: string
+  action?: number
+  outcome?: number
 }
 
 export function parseEvent(event: rpc.Api.EventResponse): ParsedEvent | null {
@@ -170,6 +194,143 @@ export function parseEvent(event: rpc.Api.EventResponse): ParsedEvent | null {
       txHash: event.txHash,
     }
   }
+  if (matchTopic(event, "quest_created")) {
+    return {
+      type: "quest_created",
+      questId: decodeScValU32(vals[0]),
+      ledger: event.ledger,
+      txHash: event.txHash,
+    }
+  }
+  if (matchTopic(event, "quest_updated")) {
+    return {
+      type: "quest_updated",
+      questId: decodeScValU32(vals[0]),
+      ledger: event.ledger,
+      txHash: event.txHash,
+    }
+  }
+  if (matchTopic(event, "creator_verified")) {
+    return {
+      type: "creator_verified",
+      questId: decodeScValU32(vals[0]),
+      admin: decodeScValAddress(vals[1]),
+      ledger: event.ledger,
+      txHash: event.txHash,
+    }
+  }
+  if (matchTopic(event, "creator_verification_revoked")) {
+    return {
+      type: "creator_verification_revoked",
+      creator: decodeScValAddress(vals[0]),
+      admin: decodeScValAddress(vals[1]),
+      ledger: event.ledger,
+      txHash: event.txHash,
+    }
+  }
+  if (matchTopic(event, "admin_transferred")) {
+    return {
+      type: "admin_transferred",
+      previousAdmin: decodeScValAddress(vals[0]),
+      newAdmin: decodeScValAddress(vals[1]),
+      ledger: event.ledger,
+      txHash: event.txHash,
+    }
+  }
+  if (matchTopic(event, "quest_ttl_extended")) {
+    return {
+      type: "quest_ttl_extended",
+      questId: decodeScValU32(vals[0]),
+      ledger: event.ledger,
+      txHash: event.txHash,
+    }
+  }
+  if (matchTopic(event, "distribution_mode_set")) {
+    return {
+      type: "distribution_mode_set",
+      questId: decodeScValU32(vals[0]),
+      mode: decodeScValU32(vals[1]),
+      flatReward: decodeScValI128(vals[2]),
+      actor: decodeScValAddress(vals[3]),
+      ledger: event.ledger,
+      txHash: event.txHash,
+    }
+  }
+  if (matchTopic(event, "reward_refunded")) {
+    return {
+      type: "reward_refunded",
+      questId: decodeScValU32(vals[0]),
+      authority: decodeScValAddress(vals[1]),
+      amount: decodeScValI128(vals[2]),
+      ledger: event.ledger,
+      txHash: event.txHash,
+    }
+  }
+  if (matchTopic(event, "milestone_partial")) {
+    return {
+      type: "milestone_partial",
+      questId: decodeScValU32(vals[0]),
+      milestoneId: decodeScValU32(vals[1]),
+      enrollee: decodeScValAddress(vals[2]),
+      criteriaMet: decodeScValU32(vals[3]),
+      maxCriteria: decodeScValU32(vals[4]),
+      amount: decodeScValI128(vals[5]),
+      ledger: event.ledger,
+      txHash: event.txHash,
+    }
+  }
+  if (matchTopic(event, "pending_reward_released")) {
+    return {
+      type: "pending_reward_released",
+      questId: decodeScValU32(vals[0]),
+      enrollee: decodeScValAddress(vals[1]),
+      amount: decodeScValI128(vals[2]),
+      ledger: event.ledger,
+      txHash: event.txHash,
+    }
+  }
+  if (matchTopic(event, "certificate_mint_failed")) {
+    return {
+      type: "certificate_mint_failed",
+      questId: decodeScValU32(vals[0]),
+      enrollee: decodeScValAddress(vals[1]),
+      ledger: event.ledger,
+      txHash: event.txHash,
+    }
+  }
+  if (matchTopic(event, "milestone_feedback")) {
+    return {
+      type: "milestone_feedback",
+      questId: decodeScValU32(vals[0]),
+      milestoneId: decodeScValU32(vals[1]),
+      enrollee: decodeScValAddress(vals[2]),
+      reviewer: decodeScValAddress(vals[3]),
+      action: decodeScValU32(vals[4]),
+      ledger: event.ledger,
+      txHash: event.txHash,
+    }
+  }
+  if (matchTopic(event, "dispute_initiated")) {
+    return {
+      type: "dispute_initiated",
+      questId: decodeScValU32(vals[0]),
+      milestoneId: decodeScValU32(vals[1]),
+      enrollee: decodeScValAddress(vals[2]),
+      ledger: event.ledger,
+      txHash: event.txHash,
+    }
+  }
+  if (matchTopic(event, "dispute_resolved")) {
+    return {
+      type: "dispute_resolved",
+      questId: decodeScValU32(vals[0]),
+      milestoneId: decodeScValU32(vals[1]),
+      enrollee: decodeScValAddress(vals[2]),
+      outcome: decodeScValU32(vals[3]),
+      ledger: event.ledger,
+      txHash: event.txHash,
+    }
+  }
 
   return null
 }
@@ -182,6 +343,10 @@ function invalidateQuestQueries(parsed: ParsedEvent) {
   void queryClient.invalidateQueries({ queryKey: ["milestoneCount", questId] })
   void queryClient.invalidateQueries({ queryKey: ["rewardPool", questId] })
   void queryClient.invalidateQueries({ queryKey: ["dashboard"] })
+
+  if (parsed.type === "creator_verified" || parsed.type === "creator_verification_revoked") {
+    void queryClient.invalidateQueries({ queryKey: ["dashboard"] })
+  }
 }
 
 function formatAmount(amount: bigint): string {
@@ -196,9 +361,9 @@ export function shortenAddress(addr: string): string {
 
 export async function fetchQuestHistory(questId: number): Promise<ParsedEvent[]> {
   const contractIds = [
-    env.VITE_QUEST_CONTRACT_ID,
-    env.VITE_MILESTONE_CONTRACT_ID,
-    env.VITE_REWARDS_CONTRACT_ID,
+    contractAddresses.quest,
+    contractAddresses.milestone,
+    contractAddresses.rewards,
   ].filter(Boolean)
 
   if (contractIds.length === 0) return []
@@ -212,6 +377,12 @@ export async function fetchQuestHistory(questId: number): Promise<ParsedEvent[]>
     { topics: [[topicHex("quest_cancelled")]], contractIds },
     { topics: [[topicHex("peer_approved")]], contractIds },
     { topics: [[topicHex("certificate_minted")]], contractIds },
+    { topics: [[topicHex("milestone_partial")]], contractIds },
+    { topics: [[topicHex("pending_reward_released")]], contractIds },
+    { topics: [[topicHex("certificate_mint_failed")]], contractIds },
+    { topics: [[topicHex("milestone_feedback")]], contractIds },
+    { topics: [[topicHex("dispute_initiated")]], contractIds },
+    { topics: [[topicHex("dispute_resolved")]], contractIds },
   ]
 
   try {
@@ -239,12 +410,8 @@ export function useQuestEventStream(enabled: boolean) {
   const lastLedgerRef = useRef<number | null>(null)
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null)
   const mountedRef = useRef(true)
-  const {
-    notifyMilestoneCompletion,
-    notifyRewardDistribution,
-    notifyQuestStatusChange,
-    addToast,
-  } = useNotifications()
+  const { notifyMilestoneCompletion, notifyRewardDistribution, notifyQuestStatusChange, addToast } =
+    useNotifications()
 
   const processEvents = useCallback(
     async (events: rpc.Api.EventResponse[]) => {
@@ -303,6 +470,125 @@ export function useQuestEventStream(enabled: boolean) {
               category: "milestone",
             })
             break
+          case "quest_created":
+            addToast({
+              title: "Quest Created",
+              message: `New quest #${parsed.questId} has been created.`,
+              type: "success",
+              category: "quest_status",
+            })
+            break
+          case "quest_updated":
+            addToast({
+              title: "Quest Updated",
+              message: `Quest #${parsed.questId} has been updated.`,
+              type: "info",
+              category: "quest_status",
+            })
+            break
+          case "creator_verified":
+            addToast({
+              title: "Creator Verified",
+              message: `Creator verified for quest #${parsed.questId}.`,
+              type: "success",
+              category: "quest_status",
+            })
+            break
+          case "creator_verification_revoked":
+            addToast({
+              title: "Creator Verification Revoked",
+              message: `Creator verification revoked for quest #${parsed.questId}.`,
+              type: "warning",
+              category: "quest_status",
+            })
+            break
+          case "admin_transferred":
+            addToast({
+              title: "Admin Transferred",
+              message: `Contract admin transferred.`,
+              type: "info",
+              category: "system",
+            })
+            break
+          case "quest_ttl_extended":
+            addToast({
+              title: "TTL Extended",
+              message: `Quest #${parsed.questId} TTL has been extended.`,
+              type: "info",
+              category: "system",
+            })
+            break
+          case "distribution_mode_set":
+            addToast({
+              title: "Distribution Mode Changed",
+              message: `Distribution mode updated for quest #${parsed.questId}.`,
+              type: "warning",
+              category: "quest_status",
+            })
+            break
+          case "reward_refunded":
+            notifyRewardDistribution(
+              parsed.amount ? formatAmount(parsed.amount) : "reward",
+              "refunded"
+            )
+            break
+          case "milestone_partial":
+            notifyMilestoneCompletion(
+              `Milestone #${parsed.milestoneId ?? "?"} (Quest #${parsed.questId})`,
+              "approved"
+            )
+            addToast({
+              title: "Partial Credit Awarded",
+              message: `${parsed.criteriaMet ?? "?"}/${parsed.maxCriteria ?? "?"} criteria met on milestone #${parsed.milestoneId ?? "?"}.`,
+              type: "info",
+              category: "milestone",
+            })
+            break
+          case "pending_reward_released":
+            notifyRewardDistribution(
+              parsed.amount ? formatAmount(parsed.amount) : "reward",
+              "claimed"
+            )
+            break
+          case "certificate_mint_failed":
+            addToast({
+              title: "Certificate Mint Failed",
+              message: `Certificate minting failed for ${shortenAddress(parsed.enrollee ?? "")} on quest #${parsed.questId}. It can be retried.`,
+              type: "error",
+              category: "milestone",
+            })
+            break
+          case "milestone_feedback": {
+            const actionLabel =
+              parsed.action === 0 ? "approved" : parsed.action === 1 ? "rejected" : "requested changes on"
+            notifyMilestoneCompletion(
+              `Milestone #${parsed.milestoneId ?? "?"} (Quest #${parsed.questId})`,
+              parsed.action === 0 ? "approved" : parsed.action === 1 ? "rejected" : "submitted"
+            )
+            addToast({
+              title: "Milestone Feedback",
+              message: `Reviewer ${actionLabel} milestone #${parsed.milestoneId ?? "?"}.`,
+              type: parsed.action === 0 ? "success" : parsed.action === 1 ? "warning" : "info",
+              category: "milestone",
+            })
+            break
+          }
+          case "dispute_initiated":
+            addToast({
+              title: "Dispute Initiated",
+              message: `A dispute was opened on milestone #${parsed.milestoneId ?? "?"} (Quest #${parsed.questId}).`,
+              type: "warning",
+              category: "milestone",
+            })
+            break
+          case "dispute_resolved":
+            addToast({
+              title: "Dispute Resolved",
+              message: `Dispute on milestone #${parsed.milestoneId ?? "?"} (Quest #${parsed.questId}) resolved as ${parsed.outcome === 1 ? "overturned" : "upheld"}.`,
+              type: parsed.outcome === 1 ? "success" : "info",
+              category: "milestone",
+            })
+            break
         }
       }
     },
@@ -313,9 +599,9 @@ export function useQuestEventStream(enabled: boolean) {
     if (!mountedRef.current) return
 
     const contractIds = [
-      env.VITE_QUEST_CONTRACT_ID,
-      env.VITE_MILESTONE_CONTRACT_ID,
-      env.VITE_REWARDS_CONTRACT_ID,
+      contractAddresses.quest,
+      contractAddresses.milestone,
+      contractAddresses.rewards,
     ].filter(Boolean)
 
     const topicFilters: rpc.Api.EventFilter[] = [
@@ -327,6 +613,12 @@ export function useQuestEventStream(enabled: boolean) {
       { topics: [[topicHex("quest_cancelled")]], contractIds },
       { topics: [[topicHex("peer_approved")]], contractIds },
       { topics: [[topicHex("certificate_minted")]], contractIds },
+      { topics: [[topicHex("milestone_partial")]], contractIds },
+      { topics: [[topicHex("pending_reward_released")]], contractIds },
+      { topics: [[topicHex("certificate_mint_failed")]], contractIds },
+      { topics: [[topicHex("milestone_feedback")]], contractIds },
+      { topics: [[topicHex("dispute_initiated")]], contractIds },
+      { topics: [[topicHex("dispute_resolved")]], contractIds },
     ]
 
     try {
