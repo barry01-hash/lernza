@@ -1,16 +1,47 @@
 import { useEffect, useState, type KeyboardEvent } from "react"
 import { useForm } from "react-hook-form"
 import { zodResolver } from "@hookform/resolvers/zod"
-import { ArrowRight, FileText, Plus, X } from "lucide-react"
+import {
+  ArrowRight,
+  CheckCircle2,
+  Download,
+  FileText,
+  FileSpreadsheet,
+  Plus,
+  X,
+} from "lucide-react"
 import { Button } from "@/components/ui/button"
+import { ImportQuestDialog } from "@/components/import-quest-dialog"
+import { MAX_MILESTONES } from "@/lib/contract-types"
 import { cn } from "@/lib/utils"
 import { step1Schema, type Step1Values, FieldError, FormLabel } from "./types"
 import { useQuestCreation } from "./context"
+import { CsvImportDialog } from "./csv-import-dialog"
+import { downloadCsvTemplate, type ParsedMilestone } from "./csv-parser"
+
+/**
+ * A milestone row is a placeholder when every field is blank — step 2 seeds the
+ * list with one so the form is never empty. Placeholders must not survive an
+ * append, or step 2 would fail validation on an empty row.
+ */
+function isPlaceholder(m: ParsedMilestone): boolean {
+  return m.title.trim() === "" && m.description.trim() === ""
+}
+
+interface PendingImport {
+  milestones: ParsedMilestone[]
+  mode: "append" | "replace"
+  droppedForLimit: number
+}
 
 export function Step1Form() {
-  const { step1Data, setStep1Data, goToNext } = useQuestCreation()
+  const { step1Data, setStep1Data, step2Data, setStep2Data, goToNext } = useQuestCreation()
   const [tagInput, setTagInput] = useState("")
   const [tagError, setTagError] = useState<string | null>(null)
+  const [isCsvDialogOpen, setIsCsvDialogOpen] = useState(false)
+  const [isReviewOpen, setIsReviewOpen] = useState(false)
+  const [pendingImport, setPendingImport] = useState<PendingImport | null>(null)
+  const [importNotice, setImportNotice] = useState<string | null>(null)
 
   const {
     register,
@@ -79,6 +110,51 @@ export function Step1Form() {
       e.preventDefault()
       handleAddTag()
     }
+  }
+
+  const handleDownloadTemplate = () => {
+    downloadCsvTemplate()
+  }
+
+  const handleCsvParsed = (milestones: ParsedMilestone[], mode: "append" | "replace") => {
+    setIsCsvDialogOpen(false)
+
+    const existing = step2Data.milestones.filter(m => !isPlaceholder(m))
+    const headroom = Math.max(0, MAX_MILESTONES - (mode === "replace" ? 0 : existing.length))
+    const accepted = milestones.slice(0, headroom)
+    const droppedForLimit = milestones.length - accepted.length
+
+    setPendingImport({ milestones: accepted, mode, droppedForLimit })
+    setIsReviewOpen(true)
+  }
+
+  const handleConfirmImport = () => {
+    if (!pendingImport) return
+
+    const existing = step2Data.milestones.filter(m => !isPlaceholder(m))
+    const merged =
+      pendingImport.mode === "replace"
+        ? pendingImport.milestones
+        : [...existing, ...pendingImport.milestones]
+
+    setStep2Data({ milestones: merged })
+    setIsReviewOpen(false)
+    setPendingImport(null)
+    setImportNotice(
+      `Imported ${pendingImport.milestones.length} milestone${pendingImport.milestones.length === 1 ? "" : "s"} — ${
+        pendingImport.mode === "replace" ? "step 2 now shows only these" : "added to step 2"
+      }.` +
+        (pendingImport.droppedForLimit > 0
+          ? ` ${pendingImport.droppedForLimit} extra row${
+              pendingImport.droppedForLimit === 1 ? " was" : "s were"
+            } dropped: the contract allows at most ${MAX_MILESTONES} milestones per quest.`
+          : "")
+    )
+  }
+
+  const handleCancelImport = () => {
+    setIsReviewOpen(false)
+    setPendingImport(null)
   }
 
   const onSubmit = (data: Step1Values) => {
@@ -254,6 +330,73 @@ export function Step1Form() {
           </div>
         </div>
       </div>
+
+      {/* Milestone CSV import — pre-populates step 2 */}
+      <div className="border-border bg-background border shadow-md">
+        <div className="bg-accent border-border flex items-center justify-between border-b px-6 py-3">
+          <div className="flex items-center gap-2">
+            <FileSpreadsheet className="h-4 w-4" />
+            <span className="text-sm font-semibold tracking-wider uppercase">
+              Import Milestones
+            </span>
+          </div>
+        </div>
+        <div className="space-y-3 p-6">
+          <p className="text-muted-foreground text-sm">
+            Already have your milestones in a spreadsheet? Import them from a CSV to fill in step 2
+            automatically. Each row needs a <code className="text-foreground">milestone_title</code>
+            , <code className="text-foreground">description</code>, and{" "}
+            <code className="text-foreground">reward_amount</code> (up to {MAX_MILESTONES}{" "}
+            milestones).
+          </p>
+          <div className="flex flex-wrap gap-3">
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => setIsCsvDialogOpen(true)}
+              className="neo-press border-border border"
+            >
+              <FileSpreadsheet className="h-4 w-4" />
+              Import Milestones from CSV
+            </Button>
+            <Button
+              type="button"
+              variant="ghost"
+              onClick={handleDownloadTemplate}
+              className="text-muted-foreground hover:text-foreground"
+            >
+              <Download className="h-4 w-4" />
+              Download Sample CSV
+            </Button>
+          </div>
+
+          {importNotice && (
+            <p
+              role="status"
+              className="border-success/40 bg-success/10 text-success flex items-start gap-2 border p-3 text-xs font-semibold"
+            >
+              <CheckCircle2 className="mt-px h-3.5 w-3.5 flex-shrink-0" />
+              {importNotice}
+            </p>
+          )}
+        </div>
+      </div>
+
+      <CsvImportDialog
+        isOpen={isCsvDialogOpen}
+        onClose={() => setIsCsvDialogOpen(false)}
+        onImport={handleCsvParsed}
+      />
+
+      <ImportQuestDialog
+        isOpen={isReviewOpen}
+        onClose={handleCancelImport}
+        onConfirm={handleConfirmImport}
+        milestones={pendingImport?.milestones ?? []}
+        mode={pendingImport?.mode ?? "append"}
+        existingCount={step2Data.milestones.filter(m => !isPlaceholder(m)).length}
+        questName={nameValue}
+      />
 
       <div className="flex justify-end">
         <Button type="submit" className="shimmer-on-hover" disabled={!isValid}>
