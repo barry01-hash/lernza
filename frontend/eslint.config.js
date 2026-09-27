@@ -21,6 +21,7 @@ const imperativeButtonVerbs = new Set([
   "create",
   "delete",
   "disconnect",
+  "download",
   "edit",
   "enroll",
   "enrol",
