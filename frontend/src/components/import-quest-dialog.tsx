@@ -47,6 +47,16 @@ export function ImportQuestDialog({ isOpen, onClose, onConfirm, data }: ImportQu
 
   useScrollLock(isOpen)
 
+  // Handle focus management
+  useEffect(() => {
+    if (isOpen) {
+      previousFocusRef.current = document.activeElement as HTMLElement
+
+      const focusTimer = setTimeout(() => {
+        if (confirmButtonRef.current) {
+          confirmButtonRef.current.focus()
+        }
+      }, 100)
   const isRendered = isOpen && milestones.length > 0
 
   // Trap focus, autofocus the confirm button, close on Escape, restore focus.

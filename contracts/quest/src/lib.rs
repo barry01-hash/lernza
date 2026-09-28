@@ -871,6 +871,7 @@ impl QuestContract {
         actor: Address,
         reason: String,
     ) -> Result<(), Error> {
+        actor.require_auth();
         Self::require_not_paused(&env)?;
         let mut quest = Self::load_quest(&env, quest_id)?;
         Self::require_quest_operator(&env, &quest, &actor)?;
@@ -885,7 +886,6 @@ impl QuestContract {
             });
         }
 
-        actor.require_auth();
         quest.status = QuestStatus::Suspended;
         env.storage()
             .persistent()
@@ -908,6 +908,7 @@ impl QuestContract {
 
     /// Resume a suspended quest. Only the owner or contract administrator may resume it.
     pub fn resume_quest(env: Env, quest_id: u32, actor: Address) -> Result<(), Error> {
+        actor.require_auth();
         Self::require_not_paused(&env)?;
         let mut quest = Self::load_quest(&env, quest_id)?;
         Self::require_quest_operator(&env, &quest, &actor)?;
@@ -915,7 +916,6 @@ impl QuestContract {
             return Err(Error::InvalidInput);
         }
 
-        actor.require_auth();
         quest.status = QuestStatus::Active;
         env.storage()
             .persistent()
