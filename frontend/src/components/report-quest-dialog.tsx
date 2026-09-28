@@ -1,10 +1,11 @@
-import { useState, useCallback, useEffect, useRef } from "react"
+import { useState, useCallback, useRef } from "react"
 import { createPortal } from "react-dom"
 import { X, Flag, AlertTriangle, Send, Loader2 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent } from "@/components/ui/card"
 import { cn } from "@/lib/utils"
 import { useScrollLock } from "@/hooks/use-scroll-lock"
+import { useFocusTrap } from "@/hooks/use-focus-trap"
 
 export type ReportReason =
   | "spam"
@@ -38,7 +39,7 @@ export function ReportQuestDialog({ isOpen, questId, questName, onClose }: Repor
   const [isClosing, setIsClosing] = useState(false)
 
   const dialogRef = useRef<HTMLDivElement>(null)
-  const previousFocusRef = useRef<HTMLElement | null>(null)
+  const firstReasonRef = useRef<HTMLInputElement>(null)
 
   useScrollLock(isOpen)
 
@@ -53,56 +54,18 @@ export function ReportQuestDialog({ isOpen, questId, questName, onClose }: Repor
     }, 150)
   }, [onClose])
 
-  useEffect(() => {
-    const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key === "Escape" && isOpen) {
-        handleClose()
-      }
-    }
+  // A report is already in flight, so Escape must not dismiss the dialog out
+  // from under the user.
+  const handleEscape = useCallback(() => {
+    if (isSubmitting) return
+    handleClose()
+  }, [handleClose, isSubmitting])
 
-    if (isOpen) {
-      window.addEventListener("keydown", handleKeyDown)
-    }
-
-    return () => window.removeEventListener("keydown", handleKeyDown)
-  }, [isOpen, handleClose])
-
-  useEffect(() => {
-    if (isOpen) {
-      previousFocusRef.current = document.activeElement as HTMLElement
-
-      const handleTabKey = (e: KeyboardEvent) => {
-        if (e.key !== "Tab" || !dialogRef.current) return
-
-        const focusable = dialogRef.current.querySelectorAll(
-          'button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])'
-        )
-        const first = focusable[0] as HTMLElement
-        const last = focusable[focusable.length - 1] as HTMLElement
-
-        if (e.shiftKey) {
-          if (document.activeElement === first) {
-            last.focus()
-            e.preventDefault()
-          }
-        } else {
-          if (document.activeElement === last) {
-            first.focus()
-            e.preventDefault()
-          }
-        }
-      }
-
-      window.addEventListener("keydown", handleTabKey)
-
-      return () => {
-        window.removeEventListener("keydown", handleTabKey)
-        if (previousFocusRef.current) {
-          previousFocusRef.current.focus()
-        }
-      }
-    }
-  }, [isOpen])
+  useFocusTrap(dialogRef, {
+    isActive: isOpen,
+    onEscape: handleEscape,
+    initialFocusRef: firstReasonRef,
+  })
 
   const handleSubmit = useCallback(async () => {
     if (!reason) return
@@ -134,8 +97,12 @@ export function ReportQuestDialog({ isOpen, questId, questName, onClose }: Repor
         role="dialog"
         aria-modal="true"
         aria-labelledby="report-dialog-title"
+        aria-describedby="report-dialog-description"
+        // Fallback so the container can take focus when it holds no focusable
+        // children, and so the trap never strands focus on <body>.
+        tabIndex={-1}
         className={cn(
-          "animate-fade-in-up relative z-10 w-full max-w-md px-4",
+          "animate-fade-in-up relative z-10 w-full max-w-md px-4 focus:outline-none",
           isClosing && "scale-95 opacity-0"
         )}
       >
@@ -177,6 +144,9 @@ export function ReportQuestDialog({ isOpen, questId, questName, onClose }: Repor
                     Quest
                   </p>
                   <p className="mt-1 text-sm font-semibold">{questName}</p>
+                  <p id="report-dialog-description" className="text-muted-foreground mt-1 text-sm">
+                    Choose a reason so our moderation team can review this quest.
+                  </p>
                 </div>
 
                 <div>
@@ -184,7 +154,7 @@ export function ReportQuestDialog({ isOpen, questId, questName, onClose }: Repor
                     Reason for reporting
                   </p>
                   <div className="mt-2 space-y-2">
-                    {REPORT_REASONS.map(r => (
+                    {REPORT_REASONS.map((r, index) => (
                       <label
                         key={r.value}
                         className={cn(
@@ -195,6 +165,7 @@ export function ReportQuestDialog({ isOpen, questId, questName, onClose }: Repor
                         )}
                       >
                         <input
+                          ref={index === 0 ? firstReasonRef : undefined}
                           type="radio"
                           name="report-reason"
                           value={r.value}

@@ -139,6 +139,13 @@ export function useFocusTrap<TContainer extends HTMLElement>(
       }
     }
 
+    // Capture phase on window so the dialog sees the key before the focused
+    // control does, and so the trap still works when the event is dispatched
+    // directly at window rather than at a node inside the document.
+    window.addEventListener("keydown", handleKeyDown, true)
+
+    return () => {
+      window.removeEventListener("keydown", handleKeyDown, true)
     // Capture phase so the dialog sees the key before the focused control does.
     document.addEventListener("keydown", handleKeyDown, true)
 

@@ -68,6 +68,27 @@ export function ImportQuestDialog({ isOpen, onClose, onConfirm, data }: ImportQu
 
   if (!isRendered) return null
 
+  // Handle focus management
+  useEffect(() => {
+    if (isOpen) {
+      previousFocusRef.current = document.activeElement as HTMLElement
+
+      const focusTimer = setTimeout(() => {
+        if (confirmButtonRef.current) {
+          confirmButtonRef.current.focus()
+        }
+      }, 100)
+  const isRendered = isOpen && milestones.length > 0
+
+  // Trap focus, autofocus the confirm button, close on Escape, restore focus.
+  useFocusTrap(dialogRef, {
+    isActive: isRendered,
+    onEscape: onClose,
+    initialFocusRef: confirmButtonRef,
+  })
+
+  if (!isRendered) return null
+
         if (e.key === "Tab" && dialogRef.current) {
           const focusable = dialogRef.current.querySelectorAll(
             'button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])'
