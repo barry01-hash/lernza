@@ -1,6 +1,7 @@
 import * as React from "react"
-import { useEffect, useRef } from "react"
+import { useCallback, useRef } from "react"
 import { cn } from "@/lib/utils"
+import { useFocusTrap } from "@/hooks/use-focus-trap"
 
 interface DialogProps {
   open?: boolean
@@ -8,50 +9,17 @@ interface DialogProps {
   children: React.ReactNode
 }
 
-const FOCUSABLE_SELECTOR =
-  'button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])'
-
 const DialogTitleContext = React.createContext<string | undefined>(undefined)
 
 export function Dialog({ open, onOpenChange, children }: DialogProps) {
   const containerRef = useRef<HTMLDivElement>(null)
-  const previousFocusRef = useRef<HTMLElement | null>(null)
   const titleId = React.useId()
 
-  useEffect(() => {
-    if (!open) return
+  const handleEscape = useCallback(() => {
+    onOpenChange?.(false)
+  }, [onOpenChange])
 
-    previousFocusRef.current = document.activeElement as HTMLElement | null
-    containerRef.current?.querySelector<HTMLElement>(FOCUSABLE_SELECTOR)?.focus()
-
-    const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key === "Escape") {
-        onOpenChange?.(false)
-        return
-      }
-
-      if (e.key !== "Tab" || !containerRef.current) return
-
-      const focusable = containerRef.current.querySelectorAll<HTMLElement>(FOCUSABLE_SELECTOR)
-      if (focusable.length === 0) return
-      const first = focusable[0]
-      const last = focusable[focusable.length - 1]
-
-      if (e.shiftKey && document.activeElement === first) {
-        e.preventDefault()
-        last.focus()
-      } else if (!e.shiftKey && document.activeElement === last) {
-        e.preventDefault()
-        first.focus()
-      }
-    }
-
-    window.addEventListener("keydown", handleKeyDown)
-    return () => {
-      window.removeEventListener("keydown", handleKeyDown)
-      previousFocusRef.current?.focus()
-    }
-  }, [open, onOpenChange])
+  useFocusTrap(containerRef, { isActive: !!open, onEscape: handleEscape })
 
   if (!open) return null
   return (
@@ -61,7 +29,10 @@ export function Dialog({ open, onOpenChange, children }: DialogProps) {
         role="dialog"
         aria-modal="true"
         aria-labelledby={titleId}
-        className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4"
+        // Fallback so the container can take focus when it holds no focusable
+        // children, and so the trap never strands focus on <body>.
+        tabIndex={-1}
+        className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4 focus:outline-none"
       >
         {children}
       </div>
