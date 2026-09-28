@@ -1,7 +1,9 @@
-import { useState, type ChangeEvent, type DragEvent } from "react"
+import { useRef, useState, type ChangeEvent, type DragEvent } from "react"
 import { Upload, FileSpreadsheet, Download, AlertTriangle, CheckCircle2, X } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
+import { useScrollLock } from "@/hooks/use-scroll-lock"
+import { useFocusTrap } from "@/hooks/use-focus-trap"
 import { formatUsdc, cn } from "@/lib/utils"
 import {
   parseCsvMilestones,
@@ -21,6 +23,18 @@ export function CsvImportDialog({ isOpen, onClose, onImport }: CsvImportDialogPr
   const [parseResult, setParseResult] = useState<CsvParseResult | null>(null)
   const [importMode, setImportMode] = useState<"append" | "replace">("append")
   const [isDragging, setIsDragging] = useState(false)
+
+  const dialogRef = useRef<HTMLDivElement>(null)
+  const fileInputRef = useRef<HTMLInputElement>(null)
+
+  useScrollLock(isOpen)
+
+  // Trap focus, autofocus the file picker, close on Escape, restore focus.
+  useFocusTrap(dialogRef, {
+    isActive: isOpen,
+    onEscape: onClose,
+    initialFocusRef: fileInputRef,
+  })
 
   if (!isOpen) return null
 
@@ -108,12 +122,22 @@ export function CsvImportDialog({ isOpen, onClose, onImport }: CsvImportDialogPr
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4 backdrop-blur-xs">
-      <div className="border-border bg-background animate-scale-in w-full max-w-xl border shadow-2xl">
+      <div
+        ref={dialogRef}
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="csv-import-title"
+        tabIndex={-1}
+        className="border-border bg-background animate-scale-in w-full max-w-xl border shadow-2xl"
+      >
         {/* Header */}
         <div className="bg-accent border-border flex items-center justify-between border-b px-6 py-3">
           <div className="flex items-center gap-2">
             <FileSpreadsheet className="h-4 w-4" />
-            <span className="text-sm font-semibold tracking-wider uppercase">
+            <span
+              id="csv-import-title"
+              className="text-sm font-semibold tracking-wider uppercase"
+            >
               Import Milestones from CSV
             </span>
           </div>
@@ -144,9 +168,25 @@ export function CsvImportDialog({ isOpen, onClose, onImport }: CsvImportDialogPr
               <code>reward_amount</code>
             </p>
             <div className="flex items-center justify-center gap-3">
-              <label className="border-border bg-background hover:bg-secondary cursor-pointer border px-4 py-2 text-xs font-semibold tracking-wider uppercase shadow-sm transition-colors">
+              <label
+                className={cn(
+                  "border-border bg-background hover:bg-secondary cursor-pointer border px-4 py-2 text-xs font-semibold tracking-wider uppercase shadow-sm transition-colors",
+                  "has-[:focus-visible]:ring-ring has-[:focus-visible]:ring-2"
+                )}
+              >
                 Browse Files
-                <input type="file" accept=".csv" onChange={handleInputChange} className="hidden" />
+                {/*
+                  Visually hidden rather than `display: none` so it stays focusable —
+                  `hidden` would make the file picker unreachable by keyboard and
+                  silently defeat the dialog's initial focus target.
+                */}
+                <input
+                  ref={fileInputRef}
+                  type="file"
+                  accept=".csv"
+                  onChange={handleInputChange}
+                  className="sr-only"
+                />
               </label>
               <button
                 type="button"
@@ -179,7 +219,11 @@ export function CsvImportDialog({ isOpen, onClose, onImport }: CsvImportDialogPr
 
           {/* Errors List */}
           {parseResult && parseResult.errors.length > 0 && (
-            <div className="border-destructive/40 bg-destructive/10 space-y-2 border p-4">
+            <div
+              className="border-destructive/40 bg-destructive/10 space-y-2 border p-4"
+              role="alert"
+              aria-live="assertive"
+            >
               <div className="text-destructive flex items-center gap-2 text-xs font-semibold">
                 <AlertTriangle className="h-4 w-4 flex-shrink-0" />
                 CSV Parsing Errors ({parseResult.errors.length}):

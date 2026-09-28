@@ -1,9 +1,10 @@
 import { CheckCircle2, Coins, FileSpreadsheet, X } from "lucide-react"
-import { useEffect, useRef } from "react"
+import { useRef } from "react"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { useScrollLock } from "@/hooks/use-scroll-lock"
+import { useFocusTrap } from "@/hooks/use-focus-trap"
 import { formatUsdc } from "@/lib/utils"
 import type { ParsedMilestone } from "@/pages/create-quest/csv-parser"
 
@@ -27,74 +28,37 @@ export function ImportQuestDialog({
   questName,
 }: ImportQuestDialogProps) {
   const dialogRef = useRef<HTMLDivElement>(null)
-  const previousFocusRef = useRef<HTMLElement | null>(null)
   const confirmButtonRef = useRef<HTMLButtonElement>(null)
 
   useScrollLock(isOpen)
 
-  // Handle focus management
-  useEffect(() => {
-    if (isOpen) {
-      previousFocusRef.current = document.activeElement as HTMLElement
+  const isRendered = isOpen && milestones.length > 0
 
-      const focusTimer = setTimeout(() => {
-        if (confirmButtonRef.current) {
-          confirmButtonRef.current.focus()
-        }
-      }, 100)
+  // Trap focus, autofocus the confirm button, close on Escape, restore focus.
+  useFocusTrap(dialogRef, {
+    isActive: isRendered,
+    onEscape: onClose,
+    initialFocusRef: confirmButtonRef,
+  })
 
-      const handleKeyDown = (e: KeyboardEvent) => {
-        if (e.key === "Escape") {
-          onClose()
-          return
-        }
-
-        if (e.key === "Tab" && dialogRef.current) {
-          const focusable = dialogRef.current.querySelectorAll(
-            'button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])'
-          )
-          const first = focusable[0] as HTMLElement
-          const last = focusable[focusable.length - 1] as HTMLElement
-
-          if (e.shiftKey) {
-            if (document.activeElement === first) {
-              last.focus()
-              e.preventDefault()
-            }
-          } else {
-            if (document.activeElement === last) {
-              first.focus()
-              e.preventDefault()
-            }
-          }
-        }
-      }
-
-      window.addEventListener("keydown", handleKeyDown)
-
-      return () => {
-        clearTimeout(focusTimer)
-        window.removeEventListener("keydown", handleKeyDown)
-        if (previousFocusRef.current) {
-          previousFocusRef.current.focus()
-        }
-      }
-    }
-  }, [isOpen, onClose])
-
-  if (!isOpen || milestones.length === 0) return null
+  if (!isRendered) return null
 
   const totalReward = milestones.reduce((sum, m) => sum + m.rewardAmount, 0)
   const resultingCount = mode === "replace" ? milestones.length : existingCount + milestones.length
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center">
-      <div className="absolute inset-0 bg-black/50 backdrop-blur-sm" onClick={onClose} />
+      <div
+        className="absolute inset-0 bg-black/50 backdrop-blur-sm"
+        onClick={onClose}
+        aria-hidden="true"
+      />
       <div
         ref={dialogRef}
         role="dialog"
         aria-modal="true"
         aria-labelledby="import-dialog-title"
+        tabIndex={-1}
         className="animate-fade-in-up relative z-10 w-full max-w-md px-4"
       >
         <Card className="border-border overflow-hidden border shadow-xl">
