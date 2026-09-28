@@ -58,6 +58,22 @@ export function CsvImportDialog({ isOpen, onClose, onImport }: CsvImportDialogPr
       return
     }
 
+
+    if (selectedFile.size > MAX_FILE_SIZE) {
+      setFile(null)
+      setParseResult({
+        milestones: [],
+        errors: [
+          {
+            row: 0,
+            field: "file",
+            message: "File size must be 2 MB or smaller.",
+          },
+        ],
+      })
+      return
+    }
+
     if (!selectedFile.name.endsWith(".csv")) {
       setFile(null)
       setParseResult({
@@ -153,6 +169,7 @@ export function CsvImportDialog({ isOpen, onClose, onImport }: CsvImportDialogPr
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4 backdrop-blur-xs">
+      <div className="border-border bg-background animate-scale-in w-full max-w-xl border shadow-2xl">
       <div
         ref={dialogRef}
         role="dialog"
@@ -201,6 +218,9 @@ export function CsvImportDialog({ isOpen, onClose, onImport }: CsvImportDialogPr
               <code>reward_amount</code>
             </p>
             <div className="flex items-center justify-center gap-3">
+              <label className="border-border bg-background hover:bg-secondary cursor-pointer border px-4 py-2 text-xs font-semibold tracking-wider uppercase shadow-sm transition-colors">
+                Browse Files
+                <input type="file" accept=".csv" onChange={handleInputChange} className="hidden" />
               <label
                 className={cn(
                   "border-border bg-background hover:bg-secondary cursor-pointer border px-4 py-2 text-xs font-semibold tracking-wider uppercase shadow-sm transition-colors",
@@ -265,6 +285,7 @@ export function CsvImportDialog({ isOpen, onClose, onImport }: CsvImportDialogPr
 
           {/* Errors List */}
           {parseResult && parseResult.errors.length > 0 && (
+            <div className="border-destructive/40 bg-destructive/10 space-y-2 border p-4">
             <div
               className="border-destructive/40 bg-destructive/10 space-y-2 border p-4"
               role="alert"

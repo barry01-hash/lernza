@@ -1,4 +1,5 @@
 import { CheckCircle2, Coins, FileSpreadsheet, X } from "lucide-react"
+import { useEffect, useRef } from "react"
 import { useRef } from "react"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent } from "@/components/ui/card"
@@ -56,6 +57,62 @@ export function ImportQuestDialog({ isOpen, onClose, onConfirm, data }: ImportQu
   })
 
   if (!isRendered) return null
+
+  // Handle focus management
+  useEffect(() => {
+    if (isOpen) {
+      previousFocusRef.current = document.activeElement as HTMLElement
+
+      const focusTimer = setTimeout(() => {
+        if (confirmButtonRef.current) {
+          confirmButtonRef.current.focus()
+        }
+      }, 100)
+  const isRendered = isOpen && milestones.length > 0
+
+  // Trap focus, autofocus the confirm button, close on Escape, restore focus.
+  useFocusTrap(dialogRef, {
+    isActive: isRendered,
+    onEscape: onClose,
+    initialFocusRef: confirmButtonRef,
+  })
+
+  if (!isRendered) return null
+
+        if (e.key === "Tab" && dialogRef.current) {
+          const focusable = dialogRef.current.querySelectorAll(
+            'button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])'
+          )
+          const first = focusable[0] as HTMLElement
+          const last = focusable[focusable.length - 1] as HTMLElement
+
+          if (e.shiftKey) {
+            if (document.activeElement === first) {
+              last.focus()
+              e.preventDefault()
+            }
+          } else {
+            if (document.activeElement === last) {
+              first.focus()
+              e.preventDefault()
+            }
+          }
+        }
+      }
+
+      window.addEventListener("keydown", handleKeyDown)
+
+      return () => {
+        clearTimeout(focusTimer)
+        window.removeEventListener("keydown", handleKeyDown)
+        if (previousFocusRef.current) {
+          previousFocusRef.current.focus()
+        }
+      }
+    }
+  }, [isOpen, onClose])
+
+  if (!isOpen || milestones.length === 0) return null
 
   const totalReward = milestones.reduce((sum, m) => sum + m.rewardAmount, 0)
   const resultingCount = mode === "replace" ? milestones.length : existingCount + milestones.length

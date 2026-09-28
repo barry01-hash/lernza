@@ -146,6 +146,11 @@ export function useFocusTrap<TContainer extends HTMLElement>(
 
     return () => {
       window.removeEventListener("keydown", handleKeyDown, true)
+    // Capture phase so the dialog sees the key before the focused control does.
+    document.addEventListener("keydown", handleKeyDown, true)
+
+    return () => {
+      document.removeEventListener("keydown", handleKeyDown, true)
 
       const previous = previousFocusRef.current
       if (restoreFocusRef.current && previous && previous.isConnected) {
