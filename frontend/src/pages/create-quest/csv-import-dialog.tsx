@@ -1,5 +1,6 @@
 import { useRef, useState, type ChangeEvent, type DragEvent } from "react"
 import { Upload, FileSpreadsheet, Download, AlertTriangle, CheckCircle2, X } from "lucide-react"
+import { useTranslation } from "@/i18n"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { useScrollLock } from "@/hooks/use-scroll-lock"
@@ -19,6 +20,7 @@ interface CsvImportDialogProps {
 }
 
 export function CsvImportDialog({ isOpen, onClose, onImport }: CsvImportDialogProps) {
+  const { t } = useTranslation()
   const [file, setFile] = useState<File | null>(null)
   const [parseResult, setParseResult] = useState<CsvParseResult | null>(null)
   const [importMode, setImportMode] = useState<"append" | "replace">("append")
@@ -70,6 +72,35 @@ export function CsvImportDialog({ isOpen, onClose, onImport }: CsvImportDialogPr
       })
       return
     }
+  if (selectedFile.size > MAX_FILE_SIZE) {
+    setFile(null)
+    setParseResult({
+      milestones: [],
+      errors: [
+        {
+          row: 0,
+          field: "file",
+          message: t("csv.error.tooLarge"),
+        },
+      ],
+    })
+    return
+  }
+
+  if (!selectedFile.name.endsWith(".csv")) {
+    setFile(null)
+    setParseResult({
+      milestones: [],
+      errors: [
+        {
+          row: 0,
+          field: "file",
+          message: t("csv.error.notCsv"),
+        },
+      ],
+    })
+    return
+  }
 
     setFile(selectedFile)
 
@@ -139,12 +170,14 @@ export function CsvImportDialog({ isOpen, onClose, onImport }: CsvImportDialogPr
               className="text-sm font-semibold tracking-wider uppercase"
             >
               Import Milestones from CSV
+            <span className="text-sm font-semibold tracking-wider uppercase">
+              {t("csv.title")}
             </span>
           </div>
           <button
             onClick={onClose}
             className="hover:text-destructive cursor-pointer transition-colors"
-            aria-label="Close CSV import dialog"
+            aria-label={t("csv.close")}
           >
             <X className="h-4 w-4" />
           </button>
@@ -180,6 +213,15 @@ export function CsvImportDialog({ isOpen, onClose, onImport }: CsvImportDialogPr
                   `hidden` would make the file picker unreachable by keyboard and
                   silently defeat the dialog's initial focus target.
                 */}
+            <Upload className="mx-auto h-8 w-8 text-muted-foreground mb-2" />
+            <p className="text-sm font-semibold mb-1">{t("csv.dropzone")}</p>
+            <p className="text-xs text-muted-foreground mb-4">
+              {t("csv.columnsRequired")} <code>title</code>, <code>description</code>,{" "}
+              <code>rewardAmount</code>
+            </p>
+            <div className="flex items-center justify-center gap-3">
+              <label className="border-border bg-background hover:bg-secondary cursor-pointer border px-4 py-2 text-xs font-semibold uppercase tracking-wider transition-colors shadow-sm">
+                {t("csv.browse")}
                 <input
                   ref={fileInputRef}
                   type="file"
@@ -194,7 +236,7 @@ export function CsvImportDialog({ isOpen, onClose, onImport }: CsvImportDialogPr
                 className="text-muted-foreground hover:text-foreground flex cursor-pointer items-center gap-1.5 text-xs font-bold transition-colors"
               >
                 <Download className="h-3.5 w-3.5" />
-                View Template
+                {t("csv.template")}
               </button>
             </div>
           </div>
@@ -208,9 +250,13 @@ export function CsvImportDialog({ isOpen, onClose, onImport }: CsvImportDialogPr
               </div>
               {parseResult && (
                 <div className="flex items-center gap-2">
-                  <Badge variant="outline">{parseResult.milestones.length} Valid</Badge>
+                  <Badge variant="outline">
+                    {t("csv.validCount", { count: parseResult.milestones.length })}
+                  </Badge>
                   {parseResult.errors.length > 0 && (
-                    <Badge variant="destructive">{parseResult.errors.length} Errors</Badge>
+                    <Badge variant="destructive">
+                      {t("csv.errorCount", { count: parseResult.errors.length })}
+                    </Badge>
                   )}
                 </div>
               )}
@@ -226,12 +272,12 @@ export function CsvImportDialog({ isOpen, onClose, onImport }: CsvImportDialogPr
             >
               <div className="text-destructive flex items-center gap-2 text-xs font-semibold">
                 <AlertTriangle className="h-4 w-4 flex-shrink-0" />
-                CSV Parsing Errors ({parseResult.errors.length}):
+                {t("csv.errorsHeading", { count: parseResult.errors.length })}
               </div>
               <ul className="text-destructive max-h-32 list-inside list-disc space-y-1 overflow-y-auto text-xs font-medium">
                 {parseResult.errors.map((err, idx) => (
                   <li key={idx}>
-                    Row {err.row}: Field <code>{err.field}</code> — {err.message}
+                    {t("csv.rowError", { row: err.row, field: err.field, message: err.message })}
                   </li>
                 ))}
               </ul>
@@ -247,6 +293,11 @@ export function CsvImportDialog({ isOpen, onClose, onImport }: CsvImportDialogPr
                 </span>
                 <span className="text-xs font-semibold">
                   Total Reward: {formatUsdc(totalReward)} USDC
+                <span className="text-xs font-semibold tracking-wider uppercase text-muted-foreground">
+                  {t("csv.previewHeading", { count: parseResult.milestones.length })}
+                </span>
+                <span className="text-xs font-semibold">
+                  {t("csv.totalReward", { amount: formatTokens(totalReward) })}
                 </span>
               </div>
 
@@ -275,7 +326,7 @@ export function CsvImportDialog({ isOpen, onClose, onImport }: CsvImportDialogPr
                     onChange={() => setImportMode("append")}
                     className="accent-foreground"
                   />
-                  Append to existing milestones
+                  {t("csv.modeAppend")}
                 </label>
                 <label className="flex cursor-pointer items-center gap-2 text-xs font-semibold">
                   <input
@@ -286,7 +337,7 @@ export function CsvImportDialog({ isOpen, onClose, onImport }: CsvImportDialogPr
                     onChange={() => setImportMode("replace")}
                     className="accent-foreground"
                   />
-                  Replace current milestones
+                  {t("csv.modeReplace")}
                 </label>
               </div>
             </div>
@@ -296,7 +347,7 @@ export function CsvImportDialog({ isOpen, onClose, onImport }: CsvImportDialogPr
         {/* Footer */}
         <div className="bg-secondary border-border flex items-center justify-end gap-3 border-t p-4">
           <Button type="button" variant="outline" onClick={onClose}>
-            Cancel
+            {t("common.cancel")}
           </Button>
           <Button
             type="button"
@@ -305,7 +356,7 @@ export function CsvImportDialog({ isOpen, onClose, onImport }: CsvImportDialogPr
             className="shimmer-on-hover"
           >
             <CheckCircle2 className="h-4 w-4" />
-            Import {parseResult?.milestones.length || 0} Milestones
+            {t("csv.import", { count: parseResult?.milestones.length || 0 })}
           </Button>
         </div>
       </div>

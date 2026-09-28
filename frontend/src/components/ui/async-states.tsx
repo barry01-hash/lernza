@@ -1,4 +1,4 @@
-import { Loader2, AlertCircle, Search, Wallet, Coins, Target, Users } from "lucide-react"
+import { Loader2, AlertCircle, Search, Wallet, Coins, Target, Users, Clock, ClipboardCheck } from "lucide-react"
 import { Card, CardContent } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { OptimizedImage } from "@/components/optimized-image"
@@ -190,6 +190,24 @@ interface EarningsEmptyStateProps {
   illustration?: "dashboard" | "profile" | "leaderboard"
 }
 
+interface ActivityEmptyStateProps {
+  variant: "activity"
+  title?: string
+  description?: string
+  icon?: React.ComponentType<{ className?: string }>
+  illustration?: "dashboard" | "profile" | "leaderboard"
+  // No CTA — activity is a passive feed, there's nothing to "do" from here.
+}
+
+interface ReviewsEmptyStateProps {
+  variant: "reviews"
+  title?: string
+  description?: string
+  icon?: React.ComponentType<{ className?: string }>
+  illustration?: "dashboard" | "profile" | "leaderboard"
+  // No CTA — an empty review queue means nothing is waiting on the creator.
+}
+
 interface DefaultEmptyStateProps {
   variant?: "default" | "compact"
   title?: string
@@ -206,6 +224,8 @@ type EmptyStateProps =
   | MilestonesEmptyStateProps
   | EnrolleesEmptyStateProps
   | EarningsEmptyStateProps
+  | ActivityEmptyStateProps
+  | ReviewsEmptyStateProps
   | DefaultEmptyStateProps
 
 export function EmptyState(props: EmptyStateProps) {
@@ -265,6 +285,31 @@ export function EmptyState(props: EmptyStateProps) {
             <Coins className="h-6 w-6" />
           ),
           // No CTA — earnings is a read-only state.
+        }
+      case "activity":
+        return {
+          title: title || "No activity yet",
+          description:
+            description ||
+            "Enrollments, completions, and new quests will show up here as they happen.",
+          icon: IconComponent ? (
+            <IconComponent className="h-6 w-6" />
+          ) : (
+            <Clock className="h-6 w-6" />
+          ),
+          // No CTA — a passive feed with nothing to act on yet.
+        }
+      case "reviews":
+        return {
+          title: title || "No pending reviews",
+          description:
+            description || "Submitted milestone completions awaiting your review will appear here.",
+          icon: IconComponent ? (
+            <IconComponent className="h-6 w-6" />
+          ) : (
+            <ClipboardCheck className="h-6 w-6" />
+          ),
+          // No CTA — an empty queue means there's nothing to review right now.
         }
       case "wallet":
         return {
@@ -361,12 +406,19 @@ export function EmptyState(props: EmptyStateProps) {
 interface ContractUnavailableProps {
   message?: string
   contract?: string
+  contractName?: string
+  contractId?: string
 }
 
 export function ContractUnavailable({
   message = "Contract is unavailable",
-  contract = "this contract",
+  contract,
+  contractName,
+  contractId,
 }: ContractUnavailableProps) {
+  const displayContract =
+    contract || contractName || (contractId ? `Contract (${contractId})` : "this contract")
+
   return (
     <Card className="animate-fade-in-up">
       <CardContent className="flex flex-col items-center py-12 text-center">
@@ -375,7 +427,7 @@ export function ContractUnavailable({
         </div>
         <h3 className="mb-2 font-semibold">Contract unavailable</h3>
         <p className="text-muted-foreground max-w-md text-sm">
-          {message} {contract} is not configured or deployed on the current network.
+          {message} {displayContract} is not configured or deployed on the current network.
         </p>
       </CardContent>
     </Card>

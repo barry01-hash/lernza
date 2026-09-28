@@ -1,4 +1,4 @@
-import { useState, type KeyboardEvent } from "react"
+import { useEffect, useState, type KeyboardEvent } from "react"
 import { useForm } from "react-hook-form"
 import { zodResolver } from "@hookform/resolvers/zod"
 import {
@@ -10,10 +10,12 @@ import {
   Plus,
   X,
 } from "lucide-react"
+import { ArrowRight, FileText, Plus, X, Upload } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { ImportQuestDialog } from "@/components/import-quest-dialog"
 import { MAX_MILESTONES } from "@/lib/contract-types"
 import { cn } from "@/lib/utils"
+import { useTranslation } from "@/i18n"
 import { step1Schema, type Step1Values, FieldError, FormLabel } from "./types"
 import { useQuestCreation } from "./context"
 import { CsvImportDialog } from "./csv-import-dialog"
@@ -42,6 +44,17 @@ export function Step1Form() {
   const [isReviewOpen, setIsReviewOpen] = useState(false)
   const [pendingImport, setPendingImport] = useState<PendingImport | null>(null)
   const [importNotice, setImportNotice] = useState<string | null>(null)
+import { QUEST_TEMPLATES, type QuestTemplate } from "./templates"
+import { CsvImportDialog } from "./csv-import-dialog"
+import type { ParsedMilestone } from "./csv-parser"
+
+export function Step1Form() {
+  const { step1Data, setStep1Data, step2Data, setStep2Data, goToNext, setCurrentStep, applyTemplate } =
+    useQuestCreation()
+  const { t } = useTranslation()
+  const [tagInput, setTagInput] = useState("")
+  const [tagError, setTagError] = useState<string | null>(null)
+  const [isCsvDialogOpen, setIsCsvDialogOpen] = useState(false)
 
   const {
     register,
@@ -49,6 +62,7 @@ export function Step1Form() {
     watch,
     setValue,
     formState: { errors, isValid },
+    reset,
   } = useForm<Step1Values>({
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     resolver: zodResolver(step1Schema as any),
@@ -66,23 +80,37 @@ export function Step1Form() {
   const categoryValue = watch("category", "")
   const tagsValue = watch("tags", [])
 
+  // Keep incomplete input in the creation context so "Save draft" works before a step is valid.
+  useEffect(() => {
+    const subscription = watch(value =>
+      setStep1Data({
+        name: value.name ?? "",
+        description: value.description ?? "",
+        category: value.category ?? "",
+        tags: value.tags ?? [],
+        referralBonus: value.referralBonus ?? 10,
+      })
+    )
+    return () => subscription.unsubscribe()
+  }, [setStep1Data, watch])
+
   const handleAddTag = () => {
     setTagError(null)
     const trimmed = tagInput.trim()
     if (!trimmed) {
-      setTagError("Tag cannot be empty")
+      setTagError(t("create.tagError.empty"))
       return
     }
     if (trimmed.length > 32) {
-      setTagError("Tag max 32 characters")
+      setTagError(t("create.tagError.tooLong"))
       return
     }
     if (tagsValue.length >= 5) {
-      setTagError("Maximum 5 tags allowed")
+      setTagError(t("create.tagError.tooMany"))
       return
     }
     if (tagsValue.includes(trimmed)) {
-      setTagError("Tag already added")
+      setTagError(t("create.tagError.duplicate"))
       return
     }
 
@@ -147,6 +175,11 @@ export function Step1Form() {
   const handleCancelImport = () => {
     setIsReviewOpen(false)
     setPendingImport(null)
+  const handleTemplateSelect = (template: QuestTemplate) => {
+    applyTemplate(template)
+    reset(template.step1)
+    setTagInput("")
+    setTagError(null)
   }
 
   const onSubmit = (data: Step1Values) => {
@@ -154,14 +187,79 @@ export function Step1Form() {
     goToNext()
   }
 
+  /**
+   * CSV import is reachable from the basics step so creators can bring an
+   * existing milestone list without first navigating to step 2. Imported rows
+   * land in the step-2 context and we jump straight to review them. #1617
+   */
+  const handleCsvImport = (imported: ParsedMilestone[], mode: "append" | "replace") => {
+    const converted = imported.map(m => ({
+      title: m.title,
+      description: m.description,
+      rewardAmount: m.rewardAmount,
+      prerequisiteIds: [] as number[]
+    }))
+
+    const hasExisting = step2Data.milestones.some(m => m.title.trim().length > 0)
+    const base =
+      mode === "replace" || !hasExisting
+        ? converted
+        : [
+            ...step2Data.milestones.filter(m => m.title.trim().length > 0),
+            ...converted
+          ]
+
+    setStep2Data({ ...step2Data, milestones: base })
+    setIsCsvDialogOpen(false)
+    setCurrentStep(2)
+  }
+
   return (
     <form onSubmit={handleSubmit(onSubmit)} className="space-y-6">
+      <div>
+        <div className="bg-accent border-border flex flex-wrap items-center justify-between gap-2 border-b px-6 py-3">
+          <span className="text-sm font-semibold tracking-wider uppercase">
+            {t("create.startTemplate")}
+          </span>
+          <button
+            type="button"
+            onClick={() => setIsCsvDialogOpen(true)}
+            data-onboarding="import-csv"
+            className="hover:bg-secondary flex cursor-pointer items-center gap-1.5 border border-black/20 px-2.5 py-1 text-xs font-bold transition-colors"
+          >
+            <Upload className="h-3.5 w-3.5" />
+            {t("create.importCsv")}
+          </button>
+        </div>
+        <div className="border-border bg-background grid gap-3 border border-t-0 p-4 sm:grid-cols-3">
+          {QUEST_TEMPLATES.map(template => (
+            <button
+              key={template.id}
+              type="button"
+              onClick={() => handleTemplateSelect(template)}
+              className="border-border hover:bg-secondary border p-4 text-left transition-colors hover:shadow-md"
+              aria-label={t("create.useTemplate", { name: template.name })}
+            >
+              <span className="text-muted-foreground text-[10px] font-bold tracking-wider uppercase">
+                {template.audience}
+              </span>
+              <span className="mt-1 block text-sm font-semibold">{template.name}</span>
+              <span className="text-muted-foreground mt-1 block text-xs leading-relaxed">
+                {template.description}
+              </span>
+              <span className="text-muted-foreground mt-3 block text-xs font-bold">
+                {t("common.milestones", { count: template.step2.milestones.length })}
+              </span>
+            </button>
+          ))}
+        </div>
+      </div>
       <div>
         <div className="bg-accent border-border border-b px-6 py-3">
           <div className="flex items-center gap-2">
             <FileText className="h-4 w-4" />
             <span className="text-sm font-semibold tracking-wider uppercase">
-              Step 1 — Quest Basics
+              {t("create.step1")}
             </span>
           </div>
         </div>
@@ -169,17 +267,17 @@ export function Step1Form() {
           {/* Name */}
           <div>
             <FormLabel htmlFor="quest-name-input" required>
-              Quest Name
+              {t("create.field.name")}
             </FormLabel>
             <input
               id="quest-name-input"
               {...register("name")}
               aria-invalid={!!errors.name}
               aria-describedby={errors.name ? "quest-name-error" : undefined}
-              placeholder="e.g. Learn to Code with Alex"
+              placeholder={t("create.placeholder.name")}
               className={cn(
                 "border-border bg-background w-full border px-4 py-2.5 text-sm font-medium transition-shadow focus:shadow-md focus:outline-none",
-                errors.name && "border-destructive focus:ring-1 focus:ring-destructive"
+                errors.name && "border-destructive focus:ring-destructive focus:ring-1"
               )}
               maxLength={64}
             />
@@ -199,7 +297,7 @@ export function Step1Form() {
           {/* Description */}
           <div>
             <FormLabel htmlFor="quest-description-input" required>
-              Description
+              {t("create.field.description")}
             </FormLabel>
             <textarea
               id="quest-description-input"
@@ -207,10 +305,10 @@ export function Step1Form() {
               aria-invalid={!!errors.description}
               aria-describedby={errors.description ? "quest-description-error" : undefined}
               rows={5}
-              placeholder="Describe what learners will accomplish..."
+              placeholder={t("create.placeholder.description")}
               className={cn(
                 "border-border bg-background w-full resize-none border px-4 py-2.5 text-sm font-medium transition-shadow focus:shadow-md focus:outline-none",
-                errors.description && "border-destructive focus:ring-1 focus:ring-destructive"
+                errors.description && "border-destructive focus:ring-destructive focus:ring-1"
               )}
               maxLength={2000}
             />
@@ -230,17 +328,17 @@ export function Step1Form() {
           {/* Category */}
           <div>
             <FormLabel htmlFor="quest-category-input" required>
-              Category
+              {t("create.field.category")}
             </FormLabel>
             <input
               id="quest-category-input"
               {...register("category")}
               aria-invalid={!!errors.category}
               aria-describedby={errors.category ? "quest-category-error" : undefined}
-              placeholder="e.g. Programming, Web3, Design"
+              placeholder={t("create.placeholder.category")}
               className={cn(
                 "border-border bg-background w-full border px-4 py-2.5 text-sm font-medium transition-shadow focus:shadow-md focus:outline-none",
-                errors.category && "border-destructive focus:ring-1 focus:ring-destructive"
+                errors.category && "border-destructive focus:ring-destructive focus:ring-1"
               )}
               maxLength={32}
             />
@@ -259,7 +357,7 @@ export function Step1Form() {
 
           {/* Tags */}
           <div>
-            <FormLabel htmlFor="quest-tag-input">Tags (Optional, Max 5)</FormLabel>
+            <FormLabel htmlFor="quest-tag-input">{t("create.field.tags")}</FormLabel>
             <div className="flex gap-2">
               <input
                 id="quest-tag-input"
@@ -270,7 +368,7 @@ export function Step1Form() {
                   if (tagError) setTagError(null)
                 }}
                 onKeyDown={handleTagKeyDown}
-                placeholder="e.g. soroban, rust"
+                placeholder={t("create.placeholder.tags")}
                 disabled={tagsValue.length >= 5}
                 aria-invalid={!!tagError || !!errors.tags}
                 aria-describedby={tagError ? "quest-tag-error" : undefined}
@@ -288,7 +386,7 @@ export function Step1Form() {
                 className="neo-press border-border border"
               >
                 <Plus className="h-4 w-4" />
-                Add Tag
+                {t("create.addTag")}
               </Button>
             </div>
             <div className="mt-1">
@@ -310,7 +408,7 @@ export function Step1Form() {
                     <button
                       type="button"
                       onClick={() => handleRemoveTag(idx)}
-                      aria-label={`Remove tag ${tag}`}
+                      aria-label={t("create.removeTag", { tag })}
                       className="hover:text-destructive cursor-pointer transition-colors"
                     >
                       <X className="h-3.5 w-3.5" />
@@ -319,6 +417,21 @@ export function Step1Form() {
                 ))}
               </div>
             )}
+          </div>
+
+          {/* Referral Bonus (Optional) */}
+          <div className="border-border border-t pt-2">
+            <FormLabel htmlFor="quest-referral-bonus">{t("create.field.referralBonus")}</FormLabel>
+            <input
+              id="quest-referral-bonus"
+              type="number"
+              min="0"
+              max="1000"
+              {...register("referralBonus", { valueAsNumber: true })}
+              placeholder={t("create.placeholder.referralBonus")}
+              className="border-border bg-background w-full flex-1 border px-4 py-2.5 text-sm font-medium transition-shadow focus:shadow-md focus:outline-none"
+            />
+            <p className="text-muted-foreground mt-1 text-xs">{t("create.field.referralHint")}</p>
           </div>
         </div>
       </div>
@@ -392,10 +505,17 @@ export function Step1Form() {
 
       <div className="flex justify-end">
         <Button type="submit" className="shimmer-on-hover" disabled={!isValid}>
-          Next: Add Milestones
+          {t("create.nextMilestones")}
           <ArrowRight className="h-4 w-4" />
         </Button>
       </div>
+
+      {/* CSV import reachable from the basics step (#1617) */}
+      <CsvImportDialog
+        isOpen={isCsvDialogOpen}
+        onClose={() => setIsCsvDialogOpen(false)}
+        onImport={handleCsvImport}
+      />
     </form>
   )
 }

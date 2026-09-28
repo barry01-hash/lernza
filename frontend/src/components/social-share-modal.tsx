@@ -1,6 +1,8 @@
 import { useCallback, useRef } from "react"
 import { createPortal } from "react-dom"
 import { X, Link2 } from "lucide-react"
+import { useEffect, useRef } from "react"
+import { X, Share2, MessageCircle } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { DiscordBrandIcon, XBrandIcon } from "@/components/brand-icons"
 import { useScrollLock } from "@/hooks/use-scroll-lock"
@@ -43,6 +45,9 @@ export function SocialShareModal({ isOpen, config, onClose }: SocialShareModalPr
       `https://x.com/intent/tweet?text=${encoded}`,
       "x-share",
       "width=550,height=420",
+      `https://twitter.com/intent/tweet?text=${encoded}`,
+      "twitter-share",
+      "width=550,height=420"
     )
   }
 
@@ -96,6 +101,65 @@ export function SocialShareModal({ isOpen, config, onClose }: SocialShareModalPr
                 "w-full justify-start gap-2",
                 "bg-[#1DA1F2] hover:bg-[#1aa1e0] text-white",
               )}
+  return (
+    <dialog
+      ref={dialogRef}
+      className="border-border bg-background rounded-lg border backdrop:bg-black/50"
+      onClose={handleClose}
+    >
+      <div className="w-full max-w-md space-y-4 p-6">
+        <div className="flex items-center justify-between">
+          <h2 className="text-lg font-semibold">Share Your Achievement</h2>
+          <button
+            onClick={handleClose}
+            className="text-muted-foreground hover:text-foreground"
+            aria-label="Close dialog"
+          >
+            <X size={20} />
+          </button>
+        </div>
+
+        <div className="bg-muted space-y-2 rounded-md p-3">
+          <p className="text-sm font-medium">{config.title}</p>
+          <p className="text-muted-foreground text-sm">{config.achievementText}</p>
+        </div>
+
+        <div className="space-y-2">
+          <Button
+            onClick={shareOnTwitter}
+            className={cn(
+              "w-full justify-start gap-2",
+              "bg-[#1DA1F2] text-white hover:bg-[#1a91da]"
+            )}
+          >
+            <Share2 size={18} />
+            Share on Twitter / X
+          </Button>
+
+          <Button
+            onClick={shareOnDiscord}
+            className={cn(
+              "w-full justify-start gap-2",
+              "bg-[#5865F2] text-white hover:bg-[#4752c4]"
+            )}
+          >
+            <MessageCircle size={18} />
+            Copy for Discord
+          </Button>
+
+          <Button
+            onClick={copyToClipboard}
+            variant="outline"
+            className="w-full justify-start gap-2"
+          >
+            <svg
+              xmlns="http://www.w3.org/2000/svg"
+              width="18"
+              height="18"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2"
             >
               <XBrandIcon className="h-[18px] w-[18px]" />
               Share on X
@@ -121,6 +185,8 @@ export function SocialShareModal({ isOpen, config, onClose }: SocialShareModalPr
           <div className="text-center text-xs text-muted-foreground">
             Share your quest completion and inspire others to learn
           </div>
+        <div className="text-muted-foreground text-center text-xs">
+          Share your quest completion and inspire others to learn
         </div>
       </div>
     </div>,

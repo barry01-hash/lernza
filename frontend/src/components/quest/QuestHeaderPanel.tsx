@@ -1,4 +1,4 @@
-import { ArrowLeft, Plus, Share2 } from "lucide-react"
+import { ArrowLeft, Plus, Share2, ShieldCheck } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 
@@ -7,9 +7,11 @@ interface QuestHeaderPanelProps {
   questName: string
   questDescription: string
   isComplete: boolean
+  isArchived?: boolean
   onBack: () => void
   onAddEnrollee: () => void
   onAddMilestone: () => void
+  onTransferOwnership?: () => void
   onToast: (message: string, type?: "success" | "error" | "info") => void
 }
 
@@ -18,9 +20,11 @@ export function QuestHeaderPanel({
   questName,
   questDescription,
   isComplete,
+  isArchived,
   onBack,
   onAddEnrollee,
   onAddMilestone,
+  onTransferOwnership,
   onToast,
 }: QuestHeaderPanelProps) {
   const handleShare = () => {
@@ -38,6 +42,7 @@ export function QuestHeaderPanel({
               <ArrowLeft className="h-4 w-4" />
               Back
             </Button>
+            {isArchived && <Badge variant="destructive">Archived</Badge>}
             {isComplete && <Badge variant="success">Completed</Badge>}
           </div>
 
@@ -50,11 +55,17 @@ export function QuestHeaderPanel({
             <Share2 className="h-4 w-4" />
             Share
           </Button>
-          <Button variant="outline" size="sm" onClick={onAddMilestone} className="gap-2">
+          {onTransferOwnership && !isArchived && (
+            <Button variant="outline" size="sm" onClick={onTransferOwnership} className="gap-2">
+              <ShieldCheck className="h-4 w-4" />
+              Transfer Ownership
+            </Button>
+          )}
+          <Button variant="outline" size="sm" onClick={onAddMilestone} disabled={isArchived} className="gap-2">
             <Plus className="h-4 w-4" />
             Add Milestone
           </Button>
-          <Button size="sm" onClick={onAddEnrollee} className="gap-2" data-onboarding="quest-enroll">
+          <Button size="sm" onClick={onAddEnrollee} disabled={isArchived} className="gap-2" data-onboarding="quest-enroll">
             <Plus className="h-4 w-4" />
             Add Enrollee
           </Button>

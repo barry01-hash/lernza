@@ -37,6 +37,7 @@ const imperativeButtonVerbs = new Set([
   "manage",
   "open",
   "preview",
+  "publish",
   "continue",
   "refresh",
   "reload",

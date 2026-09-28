@@ -90,6 +90,7 @@ describe("ShareButton Clipboard Fallback", () => {
       expect(mockOnToast).toHaveBeenCalledWith(
         "Unable to copy to clipboard. Please try again.",
         "error",
+        "error"
       )
     })
   })
@@ -116,6 +117,7 @@ describe("ShareButton Clipboard Fallback", () => {
       expect(mockOnToast).toHaveBeenCalledWith(
         "Unable to copy to clipboard. Please try again.",
         "error",
+        "error"
       )
     })
   })
