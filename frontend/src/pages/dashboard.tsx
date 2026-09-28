@@ -589,6 +589,33 @@ export function Dashboard(
                     </span>
                   </div>
                 )}
+              </Button>
+
+              {error && (
+                <div
+                  role="alert"
+                  className="border-border bg-destructive/10 mb-6 border px-4 py-3 text-left text-sm font-semibold text-destructive"
+                >
+                  {error.message}
+                </div>
+              )}
+
+              {/* Mini feature list */}
+              <div className="border-border animate-fade-in-up stagger-4 mt-8 border-t pt-6">
+                <div className="flex flex-wrap justify-center gap-4">
+                  {[
+                    { icon: Target, text: "Track quests" },
+                    { icon: Coins, text: "Earn tokens" },
+                    { icon: Sparkles, text: "On-chain" },
+                  ].map(item => (
+                    <div key={item.text} className="flex items-center gap-2">
+                      <div className="bg-secondary border-border flex h-6 w-6 items-center justify-center border-[1.5px]">
+                        <item.icon className="h-3 w-3" />
+                      </div>
+                      <span className="text-muted-foreground text-xs font-bold">{item.text}</span>
+                    </div>
+                  ))}
+                </div>
               </div>
             )}
           </CardContent>
@@ -944,6 +971,8 @@ export function Dashboard(
                   }`}
                 >
                   {categoryInfo.expiresAt * 1000 - Date.now() < 7 * 24 * 60 * 60 * 1000
+                    ? "Expiring soon — "
+                    : "Available until "}
                     ? t("dashboard.expiringSoon")
                     : t("dashboard.availableUntil")}
                   {new Date(categoryInfo.expiresAt * 1000).toLocaleDateString()}

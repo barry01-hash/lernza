@@ -1,9 +1,11 @@
 import { CheckCircle2, Coins, FileSpreadsheet, X } from "lucide-react"
 import { useEffect, useRef } from "react"
+import { useRef } from "react"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { useScrollLock } from "@/hooks/use-scroll-lock"
+import { useFocusTrap } from "@/hooks/use-focus-trap"
 import { formatUsdc } from "@/lib/utils"
 import type { ParsedMilestone } from "@/pages/create-quest/csv-parser"
 import { useTokenSymbol } from "@/hooks/use-token-symbol"
@@ -41,7 +43,6 @@ export function ImportQuestDialog({
 export function ImportQuestDialog({ isOpen, onClose, onConfirm, data }: ImportQuestDialogProps) {
   const { symbol } = useTokenSymbol()
   const dialogRef = useRef<HTMLDivElement>(null)
-  const previousFocusRef = useRef<HTMLElement | null>(null)
   const confirmButtonRef = useRef<HTMLButtonElement>(null)
 
   useScrollLock(isOpen)
@@ -56,12 +57,16 @@ export function ImportQuestDialog({ isOpen, onClose, onConfirm, data }: ImportQu
           confirmButtonRef.current.focus()
         }
       }, 100)
+  const isRendered = isOpen && milestones.length > 0
 
-      const handleKeyDown = (e: KeyboardEvent) => {
-        if (e.key === "Escape") {
-          onClose()
-          return
-        }
+  // Trap focus, autofocus the confirm button, close on Escape, restore focus.
+  useFocusTrap(dialogRef, {
+    isActive: isRendered,
+    onEscape: onClose,
+    initialFocusRef: confirmButtonRef,
+  })
+
+  if (!isRendered) return null
 
         if (e.key === "Tab" && dialogRef.current) {
           const focusable = dialogRef.current.querySelectorAll(
@@ -103,12 +108,17 @@ export function ImportQuestDialog({ isOpen, onClose, onConfirm, data }: ImportQu
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center">
-      <div className="absolute inset-0 bg-black/50 backdrop-blur-sm" onClick={onClose} />
+      <div
+        className="absolute inset-0 bg-black/50 backdrop-blur-sm"
+        onClick={onClose}
+        aria-hidden="true"
+      />
       <div
         ref={dialogRef}
         role="dialog"
         aria-modal="true"
         aria-labelledby="import-dialog-title"
+        tabIndex={-1}
         className="animate-fade-in-up relative z-10 w-full max-w-md px-4"
       >
         <Card className="border-border overflow-hidden border shadow-xl">
