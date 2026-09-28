@@ -39,6 +39,7 @@ import { useNowSeconds } from "@/hooks/use-now"
 import { formatTokens, getQuestLifecycleStatus } from "@/lib/utils"
 import { navigateToPath } from "@/lib/navigation"
 import { useOnboarding } from "@/hooks/use-onboarding"
+import { useTranslation } from "@/i18n"
 
 // Sub-components
 import { PersonalProgress } from "./dashboard/personal-progress"
@@ -68,6 +69,7 @@ export function Dashboard({ onSelectQuest, onCreateQuest, onLaunchTutorial }: Da
 export function Dashboard(
   { onSelectQuest, onCreateQuest, onLaunchTutorial }: DashboardProps = {} as DashboardProps
 ) {
+  const { t } = useTranslation()
   const { symbol } = useTokenSymbol()
   const { connected, connect, shortAddress, address } = useWallet()
   const [filter, setFilter] = useState<"all" | "owned" | "enrolled">("all")
@@ -158,10 +160,10 @@ export function Dashboard(
       const questMap = new Map(allQuests.map(quest => [quest.id, quest] as const))
 
       if (questMap.size < allQuests.length) {
-        logger.warn(
-          `[Dashboard] Deduplication lost ${allQuests.length - questMap.size} quest(s)`,
-          { before: allQuests.length, after: questMap.size }
-        )
+        logger.warn(`[Dashboard] Deduplication lost ${allQuests.length - questMap.size} quest(s)`, {
+          before: allQuests.length,
+          after: questMap.size,
+        })
       }
 
       const accessibleQuests = Array.from(questMap.values())
@@ -367,12 +369,11 @@ export function Dashboard(
     : rewardFilteredQuests
 
   // Tag filter — multi-tag AND/OR (issue #1635)
-  const allKnownTags = Array.from(
-    new Set(filteredQuests.flatMap(q => q.tags ?? []))
-  ).sort()
+  const allKnownTags = Array.from(new Set(filteredQuests.flatMap(q => q.tags ?? []))).sort()
   const tagSuggestions = tagInput.trim()
     ? allKnownTags.filter(
-        t => t.toLowerCase().includes(tagInput.trim().toLowerCase()) && !selectedTags.includes(t)
+        tag =>
+          tag.toLowerCase().includes(tagInput.trim().toLowerCase()) && !selectedTags.includes(tag)
       )
     : []
   const tagFilteredQuests =
@@ -381,8 +382,8 @@ export function Dashboard(
       : searchedQuests.filter(q => {
           const qtags = q.tags ?? []
           return tagFilterMode === "AND"
-            ? selectedTags.every(t => qtags.includes(t))
-            : selectedTags.some(t => qtags.includes(t))
+            ? selectedTags.every(tag => qtags.includes(tag))
+            : selectedTags.some(tag => qtags.includes(tag))
         })
 
   const sortedQuests = [...tagFilteredQuests].sort((a, b) => {
@@ -483,11 +484,11 @@ export function Dashboard(
                   {hasCompletion && startedCount === totalMilestones && totalMilestones > 0 && (
                     <Badge variant="success" className="gap-1">
                       <Sparkles className="h-3 w-3" />
-                      Complete
+                      {t("quest.status.completed")}
                     </Badge>
                   )}
                   <Badge variant={isOwned ? "default" : "secondary"} className="text-[10px]">
-                    {isOwned ? "Owner" : "Enrolled"}
+                    {isOwned ? t("quest.status.owner") : t("quest.status.enrolled")}
                   </Badge>
                 </div>
                 <p className="text-muted-foreground mt-1 line-clamp-1 text-sm">{ws.description}</p>
@@ -537,10 +538,17 @@ export function Dashboard(
                   ))}
                 </div>
               </div>
+                {ws.maxEnrollees
+                  ? t("quest.enrolledOfMax", {
+                      count: stats.enrolleeCount,
+                      max: ws.maxEnrollees,
+                      left: Math.max(0, ws.maxEnrollees - stats.enrolleeCount),
+                    })
+                  : t("common.enrolled", { count: stats.enrolleeCount })}
               </Badge>
               <Badge variant="secondary" className="gap-1">
                 <Target className="h-3 w-3" />
-                {stats.milestoneCount} milestones
+                {t("common.milestones", { count: stats.milestoneCount })}
               </Badge>
               <Badge variant="default" className="gap-1">
                 <Coins className="h-3 w-3" />
@@ -560,7 +568,7 @@ export function Dashboard(
                     className="text-muted-foreground text-xs font-bold"
                     data-testid="quest-progress-not-started"
                   >
-                    Not started
+                    {t("dashboard.notStarted")}
                   </p>
                 ) : (
                   <div className="flex items-center gap-3">
@@ -572,9 +580,12 @@ export function Dashboard(
                 )}
                 {earnedReward > 0 && (
                   <div className="flex items-center justify-between">
-                    <span className="text-muted-foreground text-xs font-bold">Earned so far</span>
+                    <span className="text-muted-foreground text-xs font-bold">
+                      {t("dashboard.earnedSoFar")}
+                    </span>
                     <span className="text-xs font-semibold text-green-700">
-                      +{formatTokens(earnedReward, 7, symbol)} / {formatTokens(totalReward, 7, symbol)}
+                      +{formatTokens(earnedReward, 7, symbol)} /{" "}
+                      {formatTokens(totalReward, 7, symbol)}
                     </span>
                   </div>
                 )}
@@ -594,34 +605,32 @@ export function Dashboard(
         <div className="bg-primary text-primary-foreground mb-8 flex flex-col items-center justify-between p-6 shadow-lg sm:flex-row">
           <div>
             <h2 className="flex items-center gap-2 text-xl font-bold">
-              <Sparkles className="h-5 w-5" /> Let's get you started!
+              <Sparkles className="h-5 w-5" /> {t("dashboard.getStarted")}
             </h2>
-            <p className="text-primary-foreground/80 mt-1">
-              New to Lernza? Take our quick interactive tour to learn how to earn or create quests.
-            </p>
+            <p className="text-primary-foreground/80 mt-1">{t("dashboard.getStartedBody")}</p>
           </div>
           <div className="mt-4 flex gap-3 sm:mt-0">
             <Button
               variant="secondary"
               onClick={() => onboarding?.open?.(0)}
               className="font-bold"
-              aria-label="Start learner tour"
+              aria-label={t("dashboard.startLearnerTour")}
             >
-              Learner Tour
+              {t("dashboard.learnerTour")}
             </Button>
             <Button
               variant="outline"
               onClick={() => onboarding?.open?.(5)}
               className="border-primary-foreground hover:bg-primary-foreground/10 text-primary-foreground bg-transparent"
-              aria-label="Start creator tour"
+              aria-label={t("dashboard.startCreatorTour")}
             >
-              Creator Tour
+              {t("dashboard.creatorTour")}
             </Button>
             <Button
               variant="ghost"
               onClick={() => onboarding?.complete?.()}
               className="hover:bg-primary-foreground/10 text-primary-foreground"
-              aria-label="Dismiss banner"
+              aria-label={t("dashboard.dismissBanner")}
             >
               <X className="h-4 w-4" />
             </Button>
@@ -637,7 +646,7 @@ export function Dashboard(
             <div className="mb-2 flex items-center gap-2">
               <Sparkles className="h-5 w-5" />
               <span className="text-sm font-bold tracking-wider uppercase">
-                {connected ? "Welcome back" : "Welcome to Lernza"}
+                {connected ? t("dashboard.welcomeBack") : t("dashboard.welcome")}
               </span>
             </div>
             {connected ? (
@@ -647,12 +656,14 @@ export function Dashboard(
                 </h1>
               </PrefetchLink>
             ) : (
-              <h1 className="text-3xl font-semibold sm:text-4xl">Discover Quests</h1>
+              <h1 className="text-3xl font-semibold sm:text-4xl">
+                {t("dashboard.discoverQuests")}
+              </h1>
             )}
             <p className="mt-1 text-sm font-bold opacity-70">
               {connected
-                ? `You have ${personalStats.questsEnrolled} active quests`
-                : "Explore on-chain educational paths"}
+                ? t("dashboard.activeQuests", { count: personalStats.questsEnrolled })
+                : t("dashboard.explorePaths")}
             </p>
           </div>
           <Button
@@ -662,7 +673,7 @@ export function Dashboard(
             data-onboarding="nav-create-quest"
           >
             <Plus className="h-4 w-4" />
-            Create quest
+            {t("dashboard.createQuest")}
           </Button>
           {onLaunchTutorial && (
             <Button
@@ -670,10 +681,10 @@ export function Dashboard(
               onClick={onLaunchTutorial}
               data-onboarding="tutorial-button"
               className="flex flex-shrink-0 items-center gap-2"
-              aria-label="Open getting started tutorial"
+              aria-label={t("nav.openTutorial")}
             >
               <BookOpen className="h-4 w-4" aria-hidden="true" />
-              Take the tour
+              {t("dashboard.takeTour")}
             </Button>
           )}
         </div>
@@ -710,13 +721,13 @@ export function Dashboard(
               <div className="relative mb-5 flex flex-col items-start justify-between gap-4 sm:flex-row sm:items-center">
                 <h2 className="flex items-center gap-2 text-xl font-semibold">
                   <LayoutDashboard className="h-5 w-5" />{" "}
-                  {connected ? "Your Quests" : "Public Quests"}
+                  {connected ? t("dashboard.yourQuests") : t("dashboard.publicQuests")}
                 </h2>
                 {connected && (
                   <div
                     className="border-border flex gap-0 border shadow-md"
                     role="group"
-                    aria-label="Quest filter"
+                    aria-label={t("dashboard.questFilter")}
                   >
                     {(["all", "owned", "enrolled"] as const).map(f => (
                       <button
@@ -727,7 +738,11 @@ export function Dashboard(
                           filter === f ? "bg-accent" : "bg-background hover:bg-secondary"
                         }`}
                       >
-                        {f === "all" ? "Show all" : f === "owned" ? "Show owned" : "Show enrolled"}
+                        {f === "all"
+                          ? t("dashboard.showAll")
+                          : f === "owned"
+                            ? t("dashboard.showOwned")
+                            : t("dashboard.showEnrolled")}
                       </button>
                     ))}
                   </div>
@@ -742,15 +757,15 @@ export function Dashboard(
                     type="text"
                     value={search}
                     onChange={e => setSearch(e.target.value)}
-                    placeholder="Search quests by name, description, category, or tag"
-                    aria-label="Search quests"
+                    placeholder={t("dashboard.searchPlaceholder")}
+                    aria-label={t("dashboard.searchLabel")}
                     className="border-border bg-background w-full border py-2.5 pr-9 pl-9 text-sm font-medium transition-shadow focus:shadow-md focus:outline-none"
                   />
                   {search && (
                     <button
                       type="button"
                       onClick={() => setSearch("")}
-                      aria-label="Clear search"
+                      aria-label={t("dashboard.clearSearch")}
                       className="text-muted-foreground hover:text-foreground absolute top-1/2 right-3 -translate-y-1/2"
                     >
                       <X className="h-4 w-4" />
@@ -761,10 +776,10 @@ export function Dashboard(
                 <select
                   value={category}
                   onChange={e => setCategory(e.target.value)}
-                  aria-label="Filter by category"
+                  aria-label={t("dashboard.filterCategory")}
                   className="border-border bg-background cursor-pointer border px-3 py-2.5 text-xs font-semibold tracking-wider uppercase shadow-sm focus:outline-none"
                 >
-                  <option value="all">All categories</option>
+                  <option value="all">{t("dashboard.allCategories")}</option>
                   {availableCategories.map(c => (
                     <option key={c} value={c}>
                       {c}
@@ -775,14 +790,14 @@ export function Dashboard(
                 <select
                   value={creatorFilter}
                   onChange={e => setCreatorFilter(e.target.value)}
-                  aria-label="Filter by creator"
+                  aria-label={t("dashboard.filterCreator")}
                   className="border-border bg-background cursor-pointer border px-3 py-2.5 text-xs font-semibold tracking-wider uppercase shadow-sm focus:outline-none"
                 >
-                  <option value="all">All creators</option>
+                  <option value="all">{t("dashboard.allCreators")}</option>
                   {availableCreators.map(creator => (
                     <option key={creator} value={creator}>
                       {creator === address
-                        ? "You"
+                        ? t("dashboard.you")
                         : `${creator.slice(0, 6)}...${creator.slice(-4)}`}
                     </option>
                   ))}
@@ -791,10 +806,10 @@ export function Dashboard(
                 <select
                   value={rewardTokenFilter}
                   onChange={e => setRewardTokenFilter(e.target.value)}
-                  aria-label="Filter by reward token"
+                  aria-label={t("dashboard.filterToken")}
                   className="border-border bg-background cursor-pointer border px-3 py-2.5 text-xs font-semibold tracking-wider uppercase shadow-sm focus:outline-none"
                 >
-                  <option value="all">All tokens</option>
+                  <option value="all">{t("dashboard.allTokens")}</option>
                   {availableRewardTokens.map(token => (
                     <option key={token} value={token}>
                       {`${token.slice(0, 6)}...${token.slice(-4)}`}
@@ -805,13 +820,13 @@ export function Dashboard(
                 <select
                   value={sortBy}
                   onChange={e => setSortBy(e.target.value as typeof sortBy)}
-                  aria-label="Sort quests"
+                  aria-label={t("dashboard.sortQuests")}
                   className="border-border bg-background cursor-pointer border px-3 py-2.5 text-xs font-semibold tracking-wider uppercase shadow-sm focus:outline-none"
                 >
-                  <option value="newest">Newest</option>
-                  <option value="ending-soon">Ending soon</option>
-                  <option value="most-enrolled">Most enrolled</option>
-                  <option value="highest-reward">Highest reward</option>
+                  <option value="newest">{t("dashboard.sort.newest")}</option>
+                  <option value="ending-soon">{t("dashboard.sort.endingSoon")}</option>
+                  <option value="most-enrolled">{t("dashboard.sort.mostEnrolled")}</option>
+                  <option value="highest-reward">{t("dashboard.sort.highestReward")}</option>
                 </select>
               </div>
 
@@ -826,15 +841,15 @@ export function Dashboard(
                       onKeyDown={e => {
                         if ((e.key === "Enter" || e.key === ",") && tagInput.trim()) {
                           e.preventDefault()
-                          const t = tagInput.trim().replace(/,$/, "")
-                          if (t && !selectedTags.includes(t)) {
-                            setSelectedTags(prev => [...prev, t])
+                          const tag = tagInput.trim().replace(/,$/, "")
+                          if (tag && !selectedTags.includes(tag)) {
+                            setSelectedTags(prev => [...prev, tag])
                           }
                           setTagInput("")
                         }
                       }}
-                      placeholder="Filter by tag (type and press Enter)"
-                      aria-label="Filter by tag"
+                      placeholder={t("dashboard.tagFilterPlaceholder")}
+                      aria-label={t("dashboard.tagFilterLabel")}
                       aria-autocomplete="list"
                       aria-controls="tag-suggestions"
                       className="border-border bg-background w-full border py-2 pr-3 pl-3 text-sm font-medium focus:outline-none"
@@ -843,21 +858,21 @@ export function Dashboard(
                       <ul
                         id="tag-suggestions"
                         role="listbox"
-                        aria-label="Tag suggestions"
+                        aria-label={t("dashboard.tagSuggestions")}
                         className="border-border bg-background absolute top-full left-0 z-20 mt-0.5 w-full border shadow-lg"
                       >
-                        {tagSuggestions.slice(0, 8).map(t => (
-                          <li key={t} role="option" aria-selected={false}>
+                        {tagSuggestions.slice(0, 8).map(tag => (
+                          <li key={tag} role="option" aria-selected={false}>
                             <button
                               type="button"
                               className="hover:bg-accent w-full px-3 py-1.5 text-left text-xs font-medium"
                               onMouseDown={e => {
                                 e.preventDefault()
-                                setSelectedTags(prev => [...prev, t])
+                                setSelectedTags(prev => [...prev, tag])
                                 setTagInput("")
                               }}
                             >
-                              {t}
+                              {tag}
                             </button>
                           </li>
                         ))}
@@ -869,7 +884,7 @@ export function Dashboard(
                     <div
                       className="border-border flex border shadow-sm"
                       role="group"
-                      aria-label="Tag filter mode"
+                      aria-label={t("dashboard.tagFilterMode")}
                     >
                       {(["OR", "AND"] as const).map(m => (
                         <button
@@ -881,7 +896,7 @@ export function Dashboard(
                             tagFilterMode === m ? "bg-accent" : "bg-background hover:bg-secondary"
                           }`}
                         >
-                          {m}
+                          {m === "OR" ? t("dashboard.tagModeOr") : t("dashboard.tagModeAnd")}
                         </button>
                       ))}
                     </div>
@@ -889,17 +904,20 @@ export function Dashboard(
                 </div>
                 {/* Active tag chips */}
                 {selectedTags.length > 0 && (
-                  <div className="mt-2 flex flex-wrap gap-1.5" aria-label="Active tag filters">
-                    {selectedTags.map(t => (
+                  <div
+                    className="mt-2 flex flex-wrap gap-1.5"
+                    aria-label={t("dashboard.activeTagFilters")}
+                  >
+                    {selectedTags.map(tag => (
                       <span
-                        key={t}
+                        key={tag}
                         className="bg-accent border-border flex items-center gap-1 border px-2 py-0.5 text-xs font-bold"
                       >
-                        {t}
+                        {tag}
                         <button
                           type="button"
-                          onClick={() => setSelectedTags(prev => prev.filter(x => x !== t))}
-                          aria-label={`Remove tag ${t}`}
+                          onClick={() => setSelectedTags(prev => prev.filter(x => x !== tag))}
+                          aria-label={t("create.removeTag", { tag })}
                           className="hover:text-destructive ml-0.5"
                         >
                           <X className="h-3 w-3" />
@@ -911,7 +929,7 @@ export function Dashboard(
                       onClick={() => setSelectedTags([])}
                       className="text-muted-foreground hover:text-foreground text-xs underline"
                     >
-                      Clear all
+                      {t("dashboard.clearAllTags")}
                     </button>
                   </div>
                 )}
@@ -926,19 +944,23 @@ export function Dashboard(
                   }`}
                 >
                   {categoryInfo.expiresAt * 1000 - Date.now() < 7 * 24 * 60 * 60 * 1000
-                    ? "Expiring soon — "
-                    : "Available until "}
+                    ? t("dashboard.expiringSoon")
+                    : t("dashboard.availableUntil")}
                   {new Date(categoryInfo.expiresAt * 1000).toLocaleDateString()}
                 </p>
               )}
 
               {/* Status filter chips */}
-              <div className="mb-4 flex flex-wrap gap-2" role="group" aria-label="Status filter">
+              <div
+                className="mb-4 flex flex-wrap gap-2"
+                role="group"
+                aria-label={t("dashboard.filterStatus")}
+              >
                 {(
                   [
-                    { value: "all", label: "All status" },
-                    { value: "active", label: "Active" },
-                    { value: "completed", label: "Completed" },
+                    { value: "all", label: t("dashboard.status.all") },
+                    { value: "active", label: t("dashboard.status.active") },
+                    { value: "completed", label: t("dashboard.status.completed") },
                   ] as const
                 ).map(s => (
                   <button
@@ -961,7 +983,7 @@ export function Dashboard(
                 <div className="flex items-center gap-1.5">
                   <SlidersHorizontal className="text-muted-foreground h-3.5 w-3.5" />
                   <span className="text-muted-foreground text-xs font-bold uppercase">
-                    Reward range:
+                    {t("dashboard.rewardRange")}
                   </span>
                 </div>
                 <div className="flex items-center gap-2">
@@ -969,8 +991,8 @@ export function Dashboard(
                     type="number"
                     value={rewardMin}
                     onChange={e => setRewardMin(e.target.value)}
-                    placeholder={`Min ${symbol}`}
-                    aria-label="Minimum reward amount"
+                    placeholder={t("dashboard.minReward", { symbol })}
+                    aria-label={t("dashboard.minRewardLabel")}
                     min="0"
                     className="border-border bg-background w-28 border px-3 py-1.5 text-xs font-medium shadow-sm focus:outline-none"
                   />
@@ -979,8 +1001,8 @@ export function Dashboard(
                     type="number"
                     value={rewardMax}
                     onChange={e => setRewardMax(e.target.value)}
-                    placeholder={`Max ${symbol}`}
-                    aria-label="Maximum reward amount"
+                    placeholder={t("dashboard.maxReward", { symbol })}
+                    aria-label={t("dashboard.maxRewardLabel")}
                     min="0"
                     className="border-border bg-background w-28 border px-3 py-1.5 text-xs font-medium shadow-sm focus:outline-none"
                   />
@@ -991,7 +1013,7 @@ export function Dashboard(
                         setRewardMin("")
                         setRewardMax("")
                       }}
-                      aria-label="Clear reward range"
+                      aria-label={t("dashboard.clearRewardRange")}
                       className="text-muted-foreground hover:text-foreground"
                     >
                       <X className="h-3.5 w-3.5" />
@@ -1001,13 +1023,17 @@ export function Dashboard(
               </div>
 
               {/* Preset Filter Chips */}
-              <div className="mb-5 flex flex-wrap gap-2" role="group" aria-label="Preset filters">
+              <div
+                className="mb-5 flex flex-wrap gap-2"
+                role="group"
+                aria-label={t("dashboard.presetFilters")}
+              >
                 {(
                   [
-                    { value: "none", label: "Show all" },
-                    { value: "ending-soon", label: "Show ending soon" },
-                    { value: "recently-funded", label: "Show recently funded" },
-                    { value: "recently-verified", label: "Show recently verified" },
+                    { value: "none", label: t("dashboard.showAll") },
+                    { value: "ending-soon", label: t("dashboard.preset.endingSoon") },
+                    { value: "recently-funded", label: t("dashboard.preset.recentlyFunded") },
+                    { value: "recently-verified", label: t("dashboard.preset.recentlyVerified") },
                   ] as const
                 ).map(p => (
                   <button
@@ -1199,10 +1225,13 @@ export function Dashboard(
                       {loadingMore ? (
                         <>
                           <Loader2 className="h-4 w-4 animate-spin" />
-                          Loading…
+                          {t("common.loading")}
                         </>
                       ) : (
-                        `Load more (${visibleQuests.length} of ${sortedQuests.length})`
+                        t("dashboard.loadMore", {
+                          visible: visibleQuests.length,
+                          total: sortedQuests.length,
+                        })
                       )}
                     </Button>
                   </div>
@@ -1215,28 +1244,28 @@ export function Dashboard(
                     illustration="dashboard"
                     title={
                       searchQuery || category !== "all"
-                        ? "No matching quests"
+                        ? t("dashboard.noMatch")
                         : preset !== "none"
-                          ? `No ${preset.replace("-", " ")} quests`
+                          ? t("dashboard.noFilteredQuests", { filter: preset.replace("-", " ") })
                           : filter === "all"
-                            ? "No quests yet"
-                            : `No ${filter} quests`
+                            ? t("dashboard.noQuestsYet")
+                            : t("dashboard.noFilteredQuests", { filter })
                     }
                     description={
                       searchQuery || category !== "all"
-                        ? "No quests match your search and filters. Try broadening them."
+                        ? t("dashboard.emptyHint")
                         : preset !== "none"
-                          ? `No quests match the "${preset.replace("-", " ")}" filter. Try a different preset.`
+                          ? t("dashboard.emptyHintPreset")
                           : filter === "all"
-                            ? "Create your first quest to start incentivizing learning with on-chain rewards."
+                            ? t("dashboard.emptyOwnedHint")
                             : filter === "owned"
-                              ? "You haven't created any quests yet. Start one to incentivize learners."
-                              : "You haven't enrolled in any quests yet. Browse available quests to get started."
+                              ? t("dashboard.emptyNotOwnedHint")
+                              : t("dashboard.emptyEnrolledHint")
                     }
                     action={
                       filter === "all" || filter === "owned"
                         ? {
-                            label: "Create quest",
+                            label: t("dashboard.createQuest"),
                             onClick: goToCreateQuest,
                           }
                         : undefined

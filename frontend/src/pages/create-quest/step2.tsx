@@ -14,6 +14,7 @@ import {
   FileSpreadsheet,
 } from "lucide-react"
 import { Button } from "@/components/ui/button"
+import { useTranslation } from "@/i18n"
 import { formatTokens, cn } from "@/lib/utils"
 import { MAX_MILESTONE_TITLE_LEN, MAX_MILESTONE_DESCRIPTION_LEN } from "@/lib/contract-types"
 import { step2Schema, milestoneSchema, type Step2Values, FieldError, FormLabel } from "./types"
@@ -22,6 +23,7 @@ import { CsvImportDialog } from "./csv-import-dialog"
 import type { ParsedMilestone } from "./csv-parser"
 
 export function Step2Form() {
+  const { t } = useTranslation()
   const { step2Data, setStep2Data, goToNext, goToBack } = useQuestCreation()
   const [isCsvDialogOpen, setIsCsvDialogOpen] = useState(false)
 
@@ -85,12 +87,14 @@ export function Step2Form() {
           <div className="flex items-center gap-2">
             <Target className="h-4 w-4" />
             <span className="text-sm font-semibold tracking-wider uppercase">
-              Step 2 — Milestones
+              {t("create.step2")}
             </span>
           </div>
           <div className="flex items-center gap-2">
             <Coins className="h-3.5 w-3.5" />
-            <span className="text-xs font-semibold">Total: {formatTokens(totalReward)} USDC</span>
+            <span className="text-xs font-semibold">
+              {t("create.total", { amount: formatTokens(totalReward) })}
+            </span>
           </div>
         </div>
 
@@ -118,7 +122,7 @@ export function Step2Form() {
                         {index + 1}
                       </div>
                       <span className="text-muted-foreground text-xs font-semibold tracking-wider uppercase">
-                        Milestone {index + 1}
+                        {t("create.milestoneLabel", { index: index + 1 })}
                       </span>
                     </div>
                     <div className="flex items-center gap-1">
@@ -126,7 +130,7 @@ export function Step2Form() {
                         type="button"
                         onClick={() => swap(index, index - 1)}
                         disabled={index === 0}
-                        aria-label={`Move milestone ${index + 1} up`}
+                        aria-label={t("create.moveUp", { index: index + 1 })}
                         className="border-border bg-background hover:bg-secondary neo-press flex h-11 w-11 cursor-pointer items-center justify-center border transition-colors disabled:cursor-not-allowed disabled:opacity-30 sm:h-7 sm:w-7"
                       >
                         <ChevronUp className="h-3.5 w-3.5" />
@@ -135,7 +139,7 @@ export function Step2Form() {
                         type="button"
                         onClick={() => swap(index, index + 1)}
                         disabled={index === fields.length - 1}
-                        aria-label={`Move milestone ${index + 1} down`}
+                        aria-label={t("create.moveDown", { index: index + 1 })}
                         className="border-border bg-background hover:bg-secondary neo-press flex h-11 w-11 cursor-pointer items-center justify-center border transition-colors disabled:cursor-not-allowed disabled:opacity-30 sm:h-7 sm:w-7"
                       >
                         <ChevronDown className="h-3.5 w-3.5" />
@@ -144,7 +148,7 @@ export function Step2Form() {
                         type="button"
                         onClick={() => remove(index)}
                         disabled={fields.length === 1}
-                        aria-label={`Remove milestone ${index + 1}`}
+                        aria-label={t("create.removeMilestone", { index: index + 1 })}
                         className="border-border bg-background hover:bg-destructive/10 hover:border-destructive neo-press flex h-11 w-11 cursor-pointer items-center justify-center border transition-colors disabled:cursor-not-allowed disabled:opacity-30 sm:h-7 sm:w-7"
                       >
                         <Trash2 className="h-3.5 w-3.5" />
@@ -155,7 +159,7 @@ export function Step2Form() {
                   {/* Title */}
                   <div>
                     <FormLabel htmlFor={`milestone-${index}-title`} required>
-                      Title
+                      {t("create.field.title")}
                     </FormLabel>
                     <input
                       id={`milestone-${index}-title`}
@@ -166,7 +170,7 @@ export function Step2Form() {
                           ? `milestone-${index}-title-error`
                           : undefined
                       }
-                      placeholder="e.g. Hello World"
+                      placeholder={t("create.placeholder.title")}
                       className={cn(
                         "border-border bg-background w-full border px-4 py-2 text-sm font-medium transition-shadow focus:shadow-md focus:outline-none",
                         errors.milestones?.[index]?.title &&
@@ -195,7 +199,7 @@ export function Step2Form() {
                   {/* Description */}
                   <div>
                     <FormLabel htmlFor={`milestone-${index}-description`} required>
-                      Description
+                      {t("create.field.description")}
                     </FormLabel>
                     <textarea
                       id={`milestone-${index}-description`}
@@ -207,7 +211,7 @@ export function Step2Form() {
                           : undefined
                       }
                       rows={2}
-                      placeholder="What should the learner do to complete this milestone?"
+                      placeholder={t("create.placeholder.milestoneDescription")}
                       className={cn(
                         "border-border bg-background w-full resize-none border px-4 py-2 text-sm font-medium transition-shadow focus:shadow-md focus:outline-none",
                         errors.milestones?.[index]?.description &&
@@ -236,7 +240,7 @@ export function Step2Form() {
                   {/* Reward Amount */}
                   <div>
                     <FormLabel htmlFor={`milestone-${index}-reward`} required>
-                      Reward Amount (USDC)
+                      {t("create.field.reward")}
                     </FormLabel>
                     <div className="flex items-center gap-0">
                       <div className="border-border bg-secondary border border-r-0 px-3 py-2 text-xs font-semibold">
@@ -256,7 +260,7 @@ export function Step2Form() {
                         type="number"
                         min="0.01"
                         step="0.01"
-                        placeholder="100"
+                        placeholder={t("create.placeholder.reward")}
                         className={cn(
                           "border-border bg-background flex-1 border px-4 py-2 text-sm font-medium transition-shadow focus:shadow-md focus:outline-none",
                           errors.milestones?.[index]?.rewardAmount &&
@@ -271,9 +275,9 @@ export function Step2Form() {
                   </div>
 
                   <div>
-                    <FormLabel>Prerequisites</FormLabel>
+                    <FormLabel>{t("create.field.prerequisites")}</FormLabel>
                     <p className="text-muted-foreground mb-2 text-xs">
-                      Select any earlier milestones that must be completed before this work unlocks.
+                      {t("create.field.prerequisitesHint")}
                     </p>
                     <div className="flex flex-wrap gap-2">
                       {fields.slice(0, index).map((_, prerequisiteIndex) => {
@@ -295,13 +299,13 @@ export function Step2Form() {
                                 })
                               }}
                             />{" "}
-                            Step {prerequisiteIndex + 1}
+                            {t("create.prerequisiteStep", { index: prerequisiteIndex + 1 })}
                           </label>
                         )
                       })}
                       {index === 0 && (
                         <span className="text-muted-foreground text-xs">
-                          First milestone is immediately available.
+                          {t("create.firstMilestoneAvailable")}
                         </span>
                       )}
                     </div>
@@ -321,7 +325,7 @@ export function Step2Form() {
               className="border-border hover:bg-secondary flex w-full cursor-pointer items-center justify-center gap-2 border border-dashed py-3 text-sm font-semibold transition-colors"
             >
               <Plus className="h-4 w-4" />
-              Add Milestone
+              {t("create.addMilestone")}
             </button>
             <button
               type="button"
@@ -329,7 +333,7 @@ export function Step2Form() {
               className="border-border bg-accent/30 hover:bg-accent flex w-full cursor-pointer items-center justify-center gap-2 border py-3 text-sm font-semibold transition-colors"
             >
               <FileSpreadsheet className="h-4 w-4" />
-              Import CSV
+              {t("create.importCsv")}
             </button>
           </div>
         </div>
@@ -345,7 +349,7 @@ export function Step2Form() {
       <div className="bg-secondary border-border flex items-center justify-between border px-5 py-3 shadow-md">
         <div className="flex items-center gap-2">
           <Coins className="h-4 w-4" />
-          <span className="text-sm font-semibold">Total reward pool needed</span>
+          <span className="text-sm font-semibold">{t("create.totalPool")}</span>
         </div>
         <span className="text-lg font-semibold tabular-nums">{formatTokens(totalReward)} USDC</span>
       </div>
@@ -353,10 +357,10 @@ export function Step2Form() {
       <div className="flex items-center justify-between">
         <Button type="button" variant="outline" onClick={goToBack}>
           <ArrowLeft className="h-4 w-4" />
-          Back
+          {t("common.back")}
         </Button>
         <Button type="submit" className="shimmer-on-hover" disabled={!isValid}>
-          Next: Fund & Review
+          {t("create.nextFund")}
           <ArrowRight className="h-4 w-4" />
         </Button>
       </div>

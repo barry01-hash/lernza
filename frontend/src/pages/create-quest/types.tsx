@@ -1,6 +1,7 @@
 import { z } from "zod"
 import { Check, AlertCircle } from "lucide-react"
 import { cn } from "@/lib/utils"
+import { useTranslation } from "@/i18n"
 import React from "react"
 import {
   MAX_QUEST_NAME_LEN,
@@ -122,10 +123,11 @@ export function FormLabel({
 }
 
 export function StepIndicator({ current }: { current: FormStep }) {
+  const { t } = useTranslation()
   const steps = [
-    { n: 1, label: "Basics" },
-    { n: 2, label: "Milestones" },
-    { n: 3, label: "Fund & Review" },
+    { n: 1, label: t("create.step.basics") },
+    { n: 2, label: t("create.step.milestones") },
+    { n: 3, label: t("create.step.fund") },
   ]
   return (
     <div className="mb-8 flex items-center gap-0">

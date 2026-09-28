@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest"
 import { render, screen, fireEvent, act } from "@testing-library/react"
+import { I18nProvider } from "@/i18n"
 import { QuestCreationProvider, useQuestCreation, DRAFT_STORAGE_KEY } from "./context"
 import { CreateQuest } from "./index"
 
@@ -150,9 +151,11 @@ describe("Quest Draft Auto-Save with Conflict Detection (Issue #1640)", () => {
     )
 
     render(
-      <QuestCreationProvider>
-        <CreateQuest onBack={vi.fn()} />
-      </QuestCreationProvider>
+      <I18nProvider>
+        <QuestCreationProvider>
+          <CreateQuest onBack={vi.fn()} />
+        </QuestCreationProvider>
+      </I18nProvider>
     )
 
     expect(screen.getByText(/Unsaved draft found/i)).toBeInTheDocument()

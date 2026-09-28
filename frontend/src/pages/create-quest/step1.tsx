@@ -98,19 +98,19 @@ export function Step1Form() {
     setTagError(null)
     const trimmed = tagInput.trim()
     if (!trimmed) {
-      setTagError("Tag cannot be empty")
+      setTagError(t("create.tagError.empty"))
       return
     }
     if (trimmed.length > 32) {
-      setTagError("Tag max 32 characters")
+      setTagError(t("create.tagError.tooLong"))
       return
     }
     if (tagsValue.length >= 5) {
-      setTagError("Maximum 5 tags allowed")
+      setTagError(t("create.tagError.tooMany"))
       return
     }
     if (tagsValue.includes(trimmed)) {
-      setTagError("Tag already added")
+      setTagError(t("create.tagError.duplicate"))
       return
     }
 
@@ -238,7 +238,7 @@ export function Step1Form() {
               type="button"
               onClick={() => handleTemplateSelect(template)}
               className="border-border hover:bg-secondary border p-4 text-left transition-colors hover:shadow-md"
-              aria-label={`Use ${template.name} template`}
+              aria-label={t("create.useTemplate", { name: template.name })}
             >
               <span className="text-muted-foreground text-[10px] font-bold tracking-wider uppercase">
                 {template.audience}
@@ -248,7 +248,7 @@ export function Step1Form() {
                 {template.description}
               </span>
               <span className="text-muted-foreground mt-3 block text-xs font-bold">
-                {template.step2.milestones.length} milestones
+                {t("common.milestones", { count: template.step2.milestones.length })}
               </span>
             </button>
           ))}
@@ -259,7 +259,7 @@ export function Step1Form() {
           <div className="flex items-center gap-2">
             <FileText className="h-4 w-4" />
             <span className="text-sm font-semibold tracking-wider uppercase">
-              Step 1 — Quest Basics
+              {t("create.step1")}
             </span>
           </div>
         </div>
@@ -267,14 +267,14 @@ export function Step1Form() {
           {/* Name */}
           <div>
             <FormLabel htmlFor="quest-name-input" required>
-              Quest Name
+              {t("create.field.name")}
             </FormLabel>
             <input
               id="quest-name-input"
               {...register("name")}
               aria-invalid={!!errors.name}
               aria-describedby={errors.name ? "quest-name-error" : undefined}
-              placeholder="e.g. Learn to Code with Alex"
+              placeholder={t("create.placeholder.name")}
               className={cn(
                 "border-border bg-background w-full border px-4 py-2.5 text-sm font-medium transition-shadow focus:shadow-md focus:outline-none",
                 errors.name && "border-destructive focus:ring-destructive focus:ring-1"
@@ -297,7 +297,7 @@ export function Step1Form() {
           {/* Description */}
           <div>
             <FormLabel htmlFor="quest-description-input" required>
-              Description
+              {t("create.field.description")}
             </FormLabel>
             <textarea
               id="quest-description-input"
@@ -305,7 +305,7 @@ export function Step1Form() {
               aria-invalid={!!errors.description}
               aria-describedby={errors.description ? "quest-description-error" : undefined}
               rows={5}
-              placeholder="Describe what learners will accomplish..."
+              placeholder={t("create.placeholder.description")}
               className={cn(
                 "border-border bg-background w-full resize-none border px-4 py-2.5 text-sm font-medium transition-shadow focus:shadow-md focus:outline-none",
                 errors.description && "border-destructive focus:ring-destructive focus:ring-1"
@@ -328,14 +328,14 @@ export function Step1Form() {
           {/* Category */}
           <div>
             <FormLabel htmlFor="quest-category-input" required>
-              Category
+              {t("create.field.category")}
             </FormLabel>
             <input
               id="quest-category-input"
               {...register("category")}
               aria-invalid={!!errors.category}
               aria-describedby={errors.category ? "quest-category-error" : undefined}
-              placeholder="e.g. Programming, Web3, Design"
+              placeholder={t("create.placeholder.category")}
               className={cn(
                 "border-border bg-background w-full border px-4 py-2.5 text-sm font-medium transition-shadow focus:shadow-md focus:outline-none",
                 errors.category && "border-destructive focus:ring-destructive focus:ring-1"
@@ -357,7 +357,7 @@ export function Step1Form() {
 
           {/* Tags */}
           <div>
-            <FormLabel htmlFor="quest-tag-input">Tags (Optional, Max 5)</FormLabel>
+            <FormLabel htmlFor="quest-tag-input">{t("create.field.tags")}</FormLabel>
             <div className="flex gap-2">
               <input
                 id="quest-tag-input"
@@ -368,7 +368,7 @@ export function Step1Form() {
                   if (tagError) setTagError(null)
                 }}
                 onKeyDown={handleTagKeyDown}
-                placeholder="e.g. soroban, rust"
+                placeholder={t("create.placeholder.tags")}
                 disabled={tagsValue.length >= 5}
                 aria-invalid={!!tagError || !!errors.tags}
                 aria-describedby={tagError ? "quest-tag-error" : undefined}
@@ -386,7 +386,7 @@ export function Step1Form() {
                 className="neo-press border-border border"
               >
                 <Plus className="h-4 w-4" />
-                Add Tag
+                {t("create.addTag")}
               </Button>
             </div>
             <div className="mt-1">
@@ -408,7 +408,7 @@ export function Step1Form() {
                     <button
                       type="button"
                       onClick={() => handleRemoveTag(idx)}
-                      aria-label={`Remove tag ${tag}`}
+                      aria-label={t("create.removeTag", { tag })}
                       className="hover:text-destructive cursor-pointer transition-colors"
                     >
                       <X className="h-3.5 w-3.5" />
@@ -421,22 +421,17 @@ export function Step1Form() {
 
           {/* Referral Bonus (Optional) */}
           <div className="border-border border-t pt-2">
-            <FormLabel htmlFor="quest-referral-bonus">
-              Referral Bonus (Tokens per completed referral)
-            </FormLabel>
+            <FormLabel htmlFor="quest-referral-bonus">{t("create.field.referralBonus")}</FormLabel>
             <input
               id="quest-referral-bonus"
               type="number"
               min="0"
               max="1000"
               {...register("referralBonus", { valueAsNumber: true })}
-              placeholder="e.g. 10"
+              placeholder={t("create.placeholder.referralBonus")}
               className="border-border bg-background w-full flex-1 border px-4 py-2.5 text-sm font-medium transition-shadow focus:shadow-md focus:outline-none"
             />
-            <p className="text-muted-foreground mt-1 text-xs">
-              Incentivize participants by offering a token bonus when they refer friends who
-              complete milestones.
-            </p>
+            <p className="text-muted-foreground mt-1 text-xs">{t("create.field.referralHint")}</p>
           </div>
         </div>
       </div>

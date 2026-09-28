@@ -76,7 +76,7 @@ function interpolate(template: string, params?: TranslationParams): string {
 function resolvePlural(
   group: Record<string, string>,
   params: TranslationParams | undefined,
-  tag: string
+  locale: Locale
 ): string | undefined {
   const raw = params?.count
   const count = typeof raw === "bigint" ? Number(raw) : typeof raw === "number" ? raw : Number(raw)
@@ -85,10 +85,11 @@ function resolvePlural(
     const exact = group[`=${count}`]
     if (exact) return exact
 
-    let pluralRules = interpolations.get(CATALOGS[tag as Locale])
+    const catalog = CATALOGS[locale]
+    let pluralRules = interpolations.get(catalog)
     if (!pluralRules) {
-      pluralRules = new Intl.PluralRules(tag)
-      interpolations.set(CATALOGS[tag as Locale], pluralRules)
+      pluralRules = new Intl.PluralRules(LOCALE_TAGS[locale])
+      interpolations.set(catalog, pluralRules)
     }
     const category = pluralRules.select(count)
     if (group[category]) return group[category]
@@ -102,14 +103,13 @@ function translate(
   locale: Locale,
   params?: TranslationParams
 ): string {
-  const tag = LOCALE_TAGS[locale]
   const primary = lookup(CATALOGS[locale], key)
   const value = primary ?? lookup(CATALOGS[FALLBACK_LOCALE], key)
 
   if (value === undefined) return key
   if (typeof value === "string") return interpolate(value, params)
 
-  const resolved = resolvePlural(value, params, tag)
+  const resolved = resolvePlural(value, params, locale)
   return resolved ? interpolate(resolved, params) : key
 }
 

@@ -120,6 +120,11 @@ vi.mock("@/hooks/use-wallet", () => ({
 
 import { useWallet } from "@/hooks/use-wallet"
 import { Dashboard } from "./dashboard"
+import { I18nProvider } from "@/i18n"
+
+function renderDashboard() {
+  return render(<Dashboard />, { wrapper: I18nProvider })
+}
 const mockUseWallet = vi.mocked(useWallet)
 
 // The "Your Quests" grid is the only element with this exact class combo —
@@ -146,7 +151,7 @@ describe("Dashboard quest search, category filter, and sort", () => {
   })
 
   it("filters quests by search text across name, description, category, and tags", async () => {
-    const { container } = render(<Dashboard />)
+    const { container } = renderDashboard()
 
     const search = await screen.findByPlaceholderText(/search quests/i)
     fireEvent.change(search, { target: { value: "soroban" } })
@@ -158,7 +163,7 @@ describe("Dashboard quest search, category filter, and sort", () => {
   })
 
   it("finds quests by searching category name even when name and tags do not match", async () => {
-    const { container } = render(<Dashboard />)
+    const { container } = renderDashboard()
 
     const search = await screen.findByPlaceholderText(/search quests/i)
     // "Blockchain" only appears in the category field of "Advanced Soroban",
@@ -172,7 +177,7 @@ describe("Dashboard quest search, category filter, and sort", () => {
   })
 
   it("clears search text via the clear button", async () => {
-    const { container } = render(<Dashboard />)
+    const { container } = renderDashboard()
     const grid = getQuestGrid(container)
 
     const search = await screen.findByPlaceholderText(/search quests/i)
@@ -185,7 +190,7 @@ describe("Dashboard quest search, category filter, and sort", () => {
   })
 
   it("filters quests by category", async () => {
-    const { container } = render(<Dashboard />)
+    const { container } = renderDashboard()
     const grid = getQuestGrid(container)
 
     const categorySelect = await screen.findByLabelText(/filter by category/i)
@@ -197,7 +202,7 @@ describe("Dashboard quest search, category filter, and sort", () => {
   })
 
   it("sorts quests by most enrolled", async () => {
-    const { container } = render(<Dashboard />)
+    const { container } = renderDashboard()
     const grid = getQuestGrid(container)
 
     const sortSelect = await screen.findByLabelText(/sort quests/i)
@@ -212,7 +217,7 @@ describe("Dashboard quest search, category filter, and sort", () => {
   })
 
   it("sorts quests by highest reward", async () => {
-    const { container } = render(<Dashboard />)
+    const { container } = renderDashboard()
     const grid = getQuestGrid(container)
 
     const sortSelect = await screen.findByLabelText(/sort quests/i)
@@ -227,7 +232,7 @@ describe("Dashboard quest search, category filter, and sort", () => {
   })
 
   it("shows an empty state when search and category yield no matches", async () => {
-    render(<Dashboard />)
+    renderDashboard()
 
     const search = await screen.findByPlaceholderText(/search quests/i)
     fireEvent.change(search, { target: { value: "nonexistent-quest-xyz" } })
@@ -236,7 +241,7 @@ describe("Dashboard quest search, category filter, and sort", () => {
   })
 
   it("filters quests by a single tag using tag autocomplete", async () => {
-    render(<Dashboard />)
+    renderDashboard()
     // Wait for quests to appear
     await screen.findByText("Smart Contract Basics")
 
@@ -253,7 +258,7 @@ describe("Dashboard quest search, category filter, and sort", () => {
   })
 
   it("shows active tag chip and allows removal", async () => {
-    render(<Dashboard />)
+    renderDashboard()
     await screen.findByText("Smart Contract Basics")
 
     const tagInput = screen.getByPlaceholderText(/filter by tag/i)
@@ -270,7 +275,7 @@ describe("Dashboard quest search, category filter, and sort", () => {
   })
 
   it("filters quests by multiple tags with OR mode (default)", async () => {
-    render(<Dashboard />)
+    renderDashboard()
     await screen.findByText("Smart Contract Basics")
 
     const tagInput = screen.getByPlaceholderText(/filter by tag/i)

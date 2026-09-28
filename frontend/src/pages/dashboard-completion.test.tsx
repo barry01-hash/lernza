@@ -121,7 +121,12 @@ vi.mock("@/hooks/use-wallet", () => ({
 
 import { useWallet } from "@/hooks/use-wallet"
 import { Dashboard } from "./dashboard"
+import { I18nProvider } from "@/i18n"
 const mockUseWallet = vi.mocked(useWallet)
+
+function renderDashboard() {
+  return render(<Dashboard />, { wrapper: I18nProvider })
+}
 
 function getQuestGrid(container: HTMLElement): HTMLElement {
   const grid = container.querySelector(".relative.grid.gap-5")
@@ -150,7 +155,7 @@ describe("Dashboard quest card completion progress (#1331)", () => {
   })
 
   it("shows Not started instead of a 0% progress bar when completion is 0", async () => {
-    const { container } = render(<Dashboard />)
+    const { container } = renderDashboard()
     const grid = getQuestGrid(container)
     await within(grid).findByText("Not Started Quest")
     const card = questCard(grid, "Not Started Quest")
@@ -161,7 +166,7 @@ describe("Dashboard quest card completion progress (#1331)", () => {
   })
 
   it("shows Not started when completion_percentage is missing/null", async () => {
-    const { container } = render(<Dashboard />)
+    const { container } = renderDashboard()
     const grid = getQuestGrid(container)
     await within(grid).findByText("Unknown Progress Quest")
     const card = questCard(grid, "Unknown Progress Quest")
@@ -171,7 +176,7 @@ describe("Dashboard quest card completion progress (#1331)", () => {
   })
 
   it("still shows a progress bar when the user has completed milestones", async () => {
-    const { container } = render(<Dashboard />)
+    const { container } = renderDashboard()
     const grid = getQuestGrid(container)
     await within(grid).findByText("In Progress Quest")
     const card = questCard(grid, "In Progress Quest")
